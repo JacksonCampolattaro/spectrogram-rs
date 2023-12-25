@@ -1,2 +1,3 @@
 # spectrogram-rs
-A simple spectrogram for PipeWire on Linux.
+
+A simple cross-platform live spectrogram.
