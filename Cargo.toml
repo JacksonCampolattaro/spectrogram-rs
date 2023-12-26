@@ -6,6 +6,9 @@ edition = "2021"
 [dependencies]
 adw = { version = "0.5.3", package = "libadwaita", features = ["v1_4"] }
 cpal = "0.15.2"
+fftw = "0.8.0"
 gtk = { version = "0.7.3", package = "gtk4", features = ["v4_12"] }
 ringbuf = "0.3.3"
 ringbuf-blocking = "0.1.0-rc.2"
+num-traits = "0.2.17"
+async-channel = "2.1.1"

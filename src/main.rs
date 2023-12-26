@@ -1,11 +1,21 @@
-use cpal::traits::{DeviceTrait, HostTrait};
+mod spectrum_analyzer;
+
+use std::future::IntoFuture;
+use spectrum_analyzer::SpectrumAnalyzer;
+
 use gtk::prelude::*;
-use gtk::{glib, Box, LevelBar, Orientation};
-use ringbuf::HeapRb;
-use ringbuf_blocking::wrap::{BlockingWrap, BlockingCons};
-use std::thread;
+use gtk::{glib, ApplicationWindow};
+
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+
+use fftw::plan::{R2CPlan, R2CPlan32};
+use fftw::array::AlignedVec;
+use gtk::glib::clone;
 
 const APP_ID: &str = "nl.campolattaro.jackson.spectrogram";
+const EPSILON: f32 = 1e-7;
+const FFT_WINDOW_SIZE: usize = 512;
+const NUM_FREQUENCIES: usize = 1 + (FFT_WINDOW_SIZE / 2);
 
 fn main() -> glib::ExitCode {
 
@@ -14,90 +24,74 @@ fn main() -> glib::ExitCode {
 
     app.connect_activate(build_ui);
 
-    let err_fn = |err| eprintln!("An error occurred on the input audio stream: {}", err);
+    // Run the application
+    let result = app.run();
 
+    // Stop the consumer thread after the application closes
+    // stop = true;
+    // consumer_thread.join().expect("Couldn't join consumer thread");
+    result
+}
+
+fn build_ui(app: &adw::Application) {
+    let mut level_bars = SpectrumAnalyzer::new();
+
+    let (sender, receiver) = async_channel::bounded(128);
+
+    let mut fft_plan = R2CPlan32::aligned(
+        &[FFT_WINDOW_SIZE],
+        fftw::types::Flag::ESTIMATE,
+    ).unwrap();
+
+    let input_data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
+        let scale = 2.0 / FFT_WINDOW_SIZE as f32;
+        let mut sample_buffer = AlignedVec::new(FFT_WINDOW_SIZE);
+        for (ret, src) in sample_buffer.iter_mut().zip(data.iter().take(FFT_WINDOW_SIZE).copied()) {
+            *ret = src;
+        }
+        let mut frequency_buffer = AlignedVec::new(NUM_FREQUENCIES);
+
+        fft_plan.r2c(&mut sample_buffer, &mut frequency_buffer).unwrap();
+
+        let frequency_magnitudes: Vec<_> = frequency_buffer.iter()
+            .map(|c| c * scale)
+            .map(|c| c.norm_sqr())
+            .map(|v: f32| 10.0 * (v + EPSILON).log10())
+            .collect();
+
+        sender.send_blocking(frequency_magnitudes);
+    };
+
+
+    let err_fn = |err| eprintln!("An error occurred on the input audio stream: {}", err);
     let host = cpal::default_host();
     let device = host.default_input_device().unwrap();
     let config = device.default_input_config().unwrap().into();
-
-    let mut buffer: HeapRb<f32> = HeapRb::new(512 * 64);
-    let (mut buffer_producer, mut buffer_consumer) = buffer.split();
-    //let mut blocking_buffer_consumer = BlockingCons::new(&mut buffer_consumer.into_rb_ref()).into();
-
-    let input_data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
-        let mut data_iter = data.into_iter().copied();
-        buffer_producer.push_iter(&mut data_iter);
-        if data_iter.next().is_some() {
-            //println!("Unable to write all data to the queue; maybe the consumer is too slow");
-        }
-    };
     let input_stream = device.build_input_stream(
         &config,
         input_data_fn,
         err_fn,
         None,
     ).unwrap();
-
-
-    let mut running_amplitude: f32 = 0.0;
-    let mut stop = false;
-    let consume_data_function = move || {
-        while !stop {
-            if buffer_consumer.len() > 128 {
-                let rms = (
-                    buffer_consumer.pop_iter()
-                        .take(128)
-                        .map(|x| { x * x })
-                        .reduce(|a, b| { a + b })
-                        .unwrap() / 128.0
-                ).sqrt();
-
-                running_amplitude = f32::max(running_amplitude * 0.99, rms);
-                println!("{}", "*".repeat((64.0 * running_amplitude) as usize));
-            }
-        }
-    };
-    let consumer_thread = thread::spawn(consume_data_function);
-
-    // Run the application
-    let result = app.run();
-
-    // Stop the consumer thread after the application closes
-    stop = true;
-    consumer_thread.join().expect("Couldn't join consumer thread");
-    result
-}
-
-fn build_ui(app: &adw::Application) {
-    let levelbar_box = Box::builder()
-        .margin_top(4)
-        .margin_bottom(4)
-        .margin_start(4)
-        .margin_end(4)
-        .spacing(1)
-        .build();
-
-    for _ in 0..32 {
-        let levelbar = LevelBar::builder()
-            .hexpand(true)
-            .vexpand(true)
-            .value(0.3)
-            .orientation(Orientation::Vertical)
-            .inverted(true)
-            .build();
-        levelbar_box.append(&levelbar);
-    }
+    input_stream.play().expect("Failed to start input stream");
 
     // create a window and set the title
-    let window = adw::ApplicationWindow::builder()
+    let window = ApplicationWindow::builder()
         .application(app)
         .title("Spectrogram")
         .default_height(100)
         .default_width(300)
         .decorated(true)
-        .content(&levelbar_box)
+        .child(&level_bars)
         .build();
 
+    glib::spawn_future_local(async move {
+        while let Ok(frequency_magnitudes) = receiver.recv().await {
+            level_bars.set_frequencies(frequency_magnitudes.as_slice());
+            input_stream.play().expect("Failed to start input stream");
+        }
+    });
+
     // Present window
-    //window.present();
+    window.present();
 }
