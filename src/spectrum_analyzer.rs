@@ -22,8 +22,6 @@ impl SpectrumAnalyzer {
         for (i, bar) in &mut self_.level_bars.iter().enumerate() {
             // todo: this is currently a misnomer
             let frequency = (i as f32) / (self_.level_bars.len() as f32);
-            // let frequency = ((i + 1) as f32).log2() /
-            //     ((self_.level_bars.len() + 1) as f32).log2();
             let magnitude = magnitudes[(frequency * magnitudes.len() as f32).floor() as usize];
             // let magnitude = magnitudes[i];
             bar.set_value(((magnitude - min) / (max - min)) as f64);

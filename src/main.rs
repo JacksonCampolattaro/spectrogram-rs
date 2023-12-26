@@ -14,7 +14,8 @@ use gtk::glib::clone;
 
 const APP_ID: &str = "nl.campolattaro.jackson.spectrogram";
 const EPSILON: f32 = 1e-7;
-const FFT_WINDOW_SIZE: usize = 512;
+const FFT_WINDOW_SIZE: usize = 4096;
+const FFT_WINDOW_STRIDE: usize = 128;
 const NUM_FREQUENCIES: usize = 1 + (FFT_WINDOW_SIZE / 2);
 
 fn main() -> glib::ExitCode {
@@ -43,23 +44,34 @@ fn build_ui(app: &adw::Application) {
         fftw::types::Flag::ESTIMATE,
     ).unwrap();
 
+    let mut sample_buffer = AlignedVec::new(FFT_WINDOW_SIZE);
+    sample_buffer.fill(0.0);
+    let mut frequency_buffer = AlignedVec::new(NUM_FREQUENCIES);
+
     let input_data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
-        let scale = 2.0 / FFT_WINDOW_SIZE as f32;
-        let mut sample_buffer = AlignedVec::new(FFT_WINDOW_SIZE);
-        for (ret, src) in sample_buffer.iter_mut().zip(data.iter().take(FFT_WINDOW_SIZE).copied()) {
-            *ret = src;
+
+        let data_iter = data.iter().copied();
+        for chunk in data.chunks_exact(FFT_WINDOW_STRIDE) {
+            sample_buffer.rotate_left(FFT_WINDOW_SIZE);
+            sample_buffer[FFT_WINDOW_SIZE-FFT_WINDOW_STRIDE..].copy_from_slice(chunk);
+
+            fft_plan.r2c(&mut sample_buffer, &mut frequency_buffer).unwrap();
+
+            let scale = 2.0 / FFT_WINDOW_SIZE as f32;
+            let frequency_magnitudes: Vec<_> = frequency_buffer.iter()
+                .map(|c| c * scale)
+                .map(|c| c.norm_sqr())
+                .map(|v: f32| 10.0 * (v + EPSILON).log10())
+                .collect();
+
+            sender.send_blocking(frequency_magnitudes).expect("Failed to send data");
         }
-        let mut frequency_buffer = AlignedVec::new(NUM_FREQUENCIES);
 
-        fft_plan.r2c(&mut sample_buffer, &mut frequency_buffer).unwrap();
+        // for (ret, src) in sample_buffer.iter_mut().zip(data.iter().take(FFT_WINDOW_SIZE).copied()) {
+        //     *ret = src;
+        // }
 
-        let frequency_magnitudes: Vec<_> = frequency_buffer.iter()
-            .map(|c| c * scale)
-            .map(|c| c.norm_sqr())
-            .map(|v: f32| 10.0 * (v + EPSILON).log10())
-            .collect();
 
-        sender.send_blocking(frequency_magnitudes);
     };
 
 
