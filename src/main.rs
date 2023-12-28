@@ -1,6 +1,8 @@
 mod spectrum_analyzer;
+mod fourier;
 
-use std::future::IntoFuture;
+use fourier::{FourierTransform, FrequencySample};
+
 use spectrum_analyzer::SpectrumAnalyzer;
 
 use gtk::prelude::*;
@@ -8,15 +10,9 @@ use gtk::{glib, ApplicationWindow};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-use fftw::plan::{R2CPlan, R2CPlan32};
-use fftw::array::AlignedVec;
-use gtk::glib::clone;
+use async_channel;
 
 const APP_ID: &str = "nl.campolattaro.jackson.spectrogram";
-const EPSILON: f32 = 1e-7;
-const FFT_WINDOW_SIZE: usize = 4096;
-const FFT_WINDOW_STRIDE: usize = 128;
-const NUM_FREQUENCIES: usize = 1 + (FFT_WINDOW_SIZE / 2);
 
 fn main() -> glib::ExitCode {
 
@@ -37,43 +33,38 @@ fn main() -> glib::ExitCode {
 fn build_ui(app: &adw::Application) {
     let mut level_bars = SpectrumAnalyzer::new();
 
-    let (sender, receiver) = async_channel::bounded(128);
+    let (sender, receiver) = async_channel::bounded(64);
 
-    let mut fft_plan = R2CPlan32::aligned(
-        &[FFT_WINDOW_SIZE],
-        fftw::types::Flag::ESTIMATE,
-    ).unwrap();
+    let mut fft = FourierTransform::new(sender);
 
-    let mut sample_buffer = AlignedVec::new(FFT_WINDOW_SIZE);
-    sample_buffer.fill(0.0);
-    let mut frequency_buffer = AlignedVec::new(NUM_FREQUENCIES);
-
-    let input_data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
-
-        let data_iter = data.iter().copied();
-        for chunk in data.chunks_exact(FFT_WINDOW_STRIDE) {
-            sample_buffer.rotate_left(FFT_WINDOW_SIZE);
-            sample_buffer[FFT_WINDOW_SIZE-FFT_WINDOW_STRIDE..].copy_from_slice(chunk);
-
-            fft_plan.r2c(&mut sample_buffer, &mut frequency_buffer).unwrap();
-
-            let scale = 2.0 / FFT_WINDOW_SIZE as f32;
-            let frequency_magnitudes: Vec<_> = frequency_buffer.iter()
-                .map(|c| c * scale)
-                .map(|c| c.norm_sqr())
-                .map(|v: f32| 10.0 * (v + EPSILON).log10())
-                .collect();
-
-            sender.send_blocking(frequency_magnitudes).expect("Failed to send data");
-        }
-
-        // for (ret, src) in sample_buffer.iter_mut().zip(data.iter().take(FFT_WINDOW_SIZE).copied()) {
-        //     *ret = src;
-        // }
-
-
-    };
-
+    // let mut fft_plan = R2CPlan32::aligned(
+    //     &[FFT_WINDOW_SIZE],
+    //     fftw::types::Flag::ESTIMATE,
+    // ).unwrap();
+    //
+    // let mut sample_buffer = AlignedVec::new(FFT_WINDOW_SIZE);
+    // sample_buffer.fill(0.0);
+    // let mut frequency_buffer = AlignedVec::new(NUM_FREQUENCIES);
+    //
+    // let input_data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
+    //
+    //     for chunk in data.chunks_exact(FFT_WINDOW_STRIDE) {
+    //         sample_buffer.rotate_left(FFT_WINDOW_SIZE);
+    //         sample_buffer[FFT_WINDOW_SIZE-FFT_WINDOW_STRIDE..].copy_from_slice(chunk);
+    //
+    //         fft_plan.r2c(&mut sample_buffer, &mut frequency_buffer).unwrap();
+    //
+    //         let scale = 2.0 / FFT_WINDOW_SIZE as f32;
+    //         let frequency_magnitudes: Vec<_> = frequency_buffer.iter()
+    //             .map(|c| c * scale)
+    //             .map(|c| c.norm_sqr())
+    //             .map(|v: f32| 10.0 * (v + EPSILON).log10())
+    //             .collect();
+    //
+    //         // todo: it might be best to avoid send_blocking if possible
+    //         sender.send_blocking(frequency_magnitudes).expect("Failed to send data");
+    //     }
+    // };
 
     let err_fn = |err| eprintln!("An error occurred on the input audio stream: {}", err);
     let host = cpal::default_host();
@@ -81,7 +72,7 @@ fn build_ui(app: &adw::Application) {
     let config = device.default_input_config().unwrap().into();
     let input_stream = device.build_input_stream(
         &config,
-        input_data_fn,
+        move |data, _| { fft.apply(data, config.sample_rate); },
         err_fn,
         None,
     ).unwrap();
@@ -98,8 +89,8 @@ fn build_ui(app: &adw::Application) {
         .build();
 
     glib::spawn_future_local(async move {
-        while let Ok(frequency_magnitudes) = receiver.recv().await {
-            level_bars.set_frequencies(frequency_magnitudes.as_slice());
+        while let Ok(frequency_sample) = receiver.recv().await {
+            level_bars.set_frequencies(frequency_sample);
             input_stream.play().expect("Failed to start input stream");
         }
     });
