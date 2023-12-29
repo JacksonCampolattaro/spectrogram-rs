@@ -1,5 +1,7 @@
 mod spectrum_analyzer;
 mod fourier;
+mod spectrogram;
+mod log_scaling;
 
 use fourier::{FourierTransform, FrequencySample};
 
@@ -11,6 +13,7 @@ use gtk::{glib, ApplicationWindow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use async_channel;
+use crate::spectrogram::Spectrogram;
 
 const APP_ID: &str = "nl.campolattaro.jackson.spectrogram";
 
@@ -31,40 +34,10 @@ fn main() -> glib::ExitCode {
 }
 
 fn build_ui(app: &adw::Application) {
-    let mut level_bars = SpectrumAnalyzer::new();
 
     let (sender, receiver) = async_channel::bounded(64);
 
     let mut fft = FourierTransform::new(sender);
-
-    // let mut fft_plan = R2CPlan32::aligned(
-    //     &[FFT_WINDOW_SIZE],
-    //     fftw::types::Flag::ESTIMATE,
-    // ).unwrap();
-    //
-    // let mut sample_buffer = AlignedVec::new(FFT_WINDOW_SIZE);
-    // sample_buffer.fill(0.0);
-    // let mut frequency_buffer = AlignedVec::new(NUM_FREQUENCIES);
-    //
-    // let input_data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
-    //
-    //     for chunk in data.chunks_exact(FFT_WINDOW_STRIDE) {
-    //         sample_buffer.rotate_left(FFT_WINDOW_SIZE);
-    //         sample_buffer[FFT_WINDOW_SIZE-FFT_WINDOW_STRIDE..].copy_from_slice(chunk);
-    //
-    //         fft_plan.r2c(&mut sample_buffer, &mut frequency_buffer).unwrap();
-    //
-    //         let scale = 2.0 / FFT_WINDOW_SIZE as f32;
-    //         let frequency_magnitudes: Vec<_> = frequency_buffer.iter()
-    //             .map(|c| c * scale)
-    //             .map(|c| c.norm_sqr())
-    //             .map(|v: f32| 10.0 * (v + EPSILON).log10())
-    //             .collect();
-    //
-    //         // todo: it might be best to avoid send_blocking if possible
-    //         sender.send_blocking(frequency_magnitudes).expect("Failed to send data");
-    //     }
-    // };
 
     let err_fn = |err| eprintln!("An error occurred on the input audio stream: {}", err);
     let host = cpal::default_host();
@@ -77,20 +50,22 @@ fn build_ui(app: &adw::Application) {
         None,
     ).unwrap();
     input_stream.play().expect("Failed to start input stream");
+    println!("Using device: {}", device.name().unwrap());
 
     // create a window and set the title
+    let mut visualizer = Spectrogram::new();
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Spectrogram")
-        .default_height(100)
-        .default_width(300)
+        .default_height(300)
+        .default_width(600)
         .decorated(true)
-        .child(&level_bars)
+        .child(&visualizer)
         .build();
 
     glib::spawn_future_local(async move {
         while let Ok(frequency_sample) = receiver.recv().await {
-            level_bars.set_frequencies(frequency_sample);
+            visualizer.push_frequencies(frequency_sample);
             input_stream.play().expect("Failed to start input stream");
         }
     });

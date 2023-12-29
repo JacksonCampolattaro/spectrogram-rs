@@ -6,7 +6,7 @@ use cpal::SampleRate;
 use async_channel::{Sender};
 
 const EPSILON: f32 = 1e-7;
-const FFT_WINDOW_SIZE: usize = 4096 * 8;
+const FFT_WINDOW_SIZE: usize = 4096;
 const FFT_WINDOW_STRIDE: usize = 128;
 const NUM_FREQUENCIES: usize = 1 + (FFT_WINDOW_SIZE / 2);
 
@@ -16,6 +16,9 @@ pub struct FrequencySample {
 }
 
 impl FrequencySample {
+    pub fn period(&self) -> f32 {
+        self.magnitudes.len() as f32 / self.sample_rate.0 as f32
+    }
     pub fn magnitude_of_frequency(&self, frequency: f32) -> f32 {
         let period = self.magnitudes.len() as f32 / self.sample_rate.0 as f32;
         let index = frequency * period;
@@ -80,7 +83,7 @@ impl FourierTransform {
 
             let scale = 2.0 / FFT_WINDOW_SIZE as f32;
             let frequency_magnitudes: Vec<_> = self.frequency_buffer.iter()
-                .map(|c| c * scale)
+                //.map(|c| c * scale)
                 .map(|c| c.norm_sqr())
                 // .map(|v: f32| 10.0 * (v + EPSILON).log10())
                 .collect();

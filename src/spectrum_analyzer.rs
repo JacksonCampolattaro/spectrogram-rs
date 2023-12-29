@@ -36,7 +36,7 @@ impl SpectrumAnalyzer {
         Object::builder().build()
     }
 
-    pub fn set_frequencies(&mut self, frequency_sample: FrequencySample) {
+    pub fn push_frequencies(&mut self, frequency_sample: FrequencySample) {
         // let min = magnitudes.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap().clone();
         // let max = magnitudes.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap().clone();
         let min = -70.0;
@@ -55,7 +55,7 @@ impl SpectrumAnalyzer {
             let magnitude = frequency_sample.mean_magnitude_of_frequency_range(frequency_start, frequency_end);
             let magnitude = 10.0 * (magnitude + 1e-7).log10();
             let magnitude = ((magnitude - min) / (max - min)) as f64;
-            let magnitude = magnitude.sqrt();
+
             bar.set_value(magnitude.max(bar.value() * 0.99));
         }
     }
