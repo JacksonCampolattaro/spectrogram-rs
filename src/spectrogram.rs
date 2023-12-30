@@ -1,15 +1,14 @@
 use std::hash::Hash;
-use std::ops::Range;
 use adw::glib::Object;
 use gtk::glib;
 use gtk::prelude::WidgetExt;
 use gtk::subclass::prelude::*;
-use plotters::coord::ranged1d::{DefaultFormatting, KeyPointHint, ReversibleRanged};
+use plotters::coord::ranged1d::{KeyPointHint, ReversibleRanged};
 use plotters::coord::{CoordTranslate, ReverseCoordTranslate};
 use plotters::coord::types::RangedCoordf32;
-use plotters::prelude::{Cartesian2d, LogCoord, LogScalable, Ranged};
-use plotters_backend::BackendCoord;
+use plotters::prelude::{Cartesian2d, LogScalable, Ranged};
 use crate::fourier::FrequencySample;
+use crate::log_scaling::LogCoordf64;
 
 glib::wrapper! {
     pub struct Spectrogram(ObjectSubclass<imp::Spectrogram>)
@@ -26,7 +25,7 @@ impl Spectrogram {
         let buffer = &self_.buffer;
 
 
-        let cartesian_range: Cartesian2d<RangedCoordf32, RangedCoordf32> = Cartesian2d::new(
+        let cartesian_range: Cartesian2d<RangedCoordf32, LogCoordf64> = Cartesian2d::new(
             self_.x_range.clone(),
             self_.y_range.clone(),
             (0..buffer.width(), 0..buffer.height()),
@@ -41,19 +40,20 @@ impl Spectrogram {
         );
 
         let min_db = -70.0;
-        let max_db = -0.0;
+        let max_db = -10.0;
 
         // Write values to the right column
         for py in 1..buffer.height() {
-
             let (t, f0) = cartesian_range.reverse_translate((buffer.width() - 1, py - 1)).unwrap();
             let (t, f1) = cartesian_range.reverse_translate((buffer.width() - 1, py)).unwrap();
 
-            let py= buffer.height() - py;
+            let py = buffer.height() - py;
 
-            let magnitude = frequency_sample.mean_magnitude_of_frequency_range(f0, f1);
-            let magnitude = 10.0 * (magnitude + 1e-7).log10();
+            let magnitude = frequency_sample.mean_magnitude_of_frequency_range(f0 as f32, f1 as f32);
+            let magnitude = 20.0 * (magnitude + 1e-7).log10();
             let magnitude = ((magnitude - min_db) / (max_db - min_db)) as f64;
+            // println!("{}", magnitude);
+            //let magnitude = magnitude.sqrt();
 
             buffer.put_pixel(
                 (buffer.width() - 1) as u32, py as u32,
@@ -65,10 +65,6 @@ impl Spectrogram {
         }
 
         self.queue_draw();
-
-        //println!("Updating buffer");
-
-        // todo
     }
 }
 
@@ -96,15 +92,15 @@ mod imp {
     use plotters_cairo::CairoBackend;
     use plotters::coord::{CoordTranslate, ReverseCoordTranslate};
     use plotters::coord::types::RangedCoordf32;
-    use crate::fourier::FrequencySample;
 
+    use crate::fourier::FrequencySample;
     use crate::log_scaling::*;
     use crate::spectrogram::imp;
     use crate::spectrum_analyzer::SpectrumAnalyzer;
 
     pub struct Spectrogram {
         pub x_range: RangedCoordf32,
-        pub y_range: RangedCoordf32,
+        pub y_range: LogCoordf64,
         pub buffer: Pixbuf,
     }
 
@@ -119,12 +115,12 @@ mod imp {
             // let y_range = ReversibleLogCoord((32.0..22050.0).log_scale().base(2.0).into());
             Self {
                 x_range: (-10.0..0.0).into(),
-                y_range: (32.0..22050.0).into(),
+                y_range: (32.0..22050.0).reversible_log_scale().base(2.0).zero_point(0.0).into(),
                 buffer: Pixbuf::new(
                     Colorspace::Rgb,
                     false,
                     8,
-                    1024, 1024,
+                    512, 1024,
                 ).unwrap(),
             }
         }
@@ -161,7 +157,7 @@ mod imp {
                 ).unwrap().into_drawing_area();
 
 
-                root.fill(&WHITE).unwrap();
+                root.fill(&BLACK).unwrap();
 
                 let mut chart = ChartBuilder::on(&root)
                     .margin(16)
@@ -173,8 +169,11 @@ mod imp {
                     )
                     .unwrap();
 
+
                 chart
                     .configure_mesh()
+                    .label_style(("sans-serif", 10, &WHITE))
+                    .axis_style(&WHITE)
                     .disable_mesh()
                     .draw()
                     .unwrap();
@@ -190,26 +189,8 @@ mod imp {
                 )
             };
 
+            // Draw the contents of the plot
             let texture = Texture::for_pixbuf(&self.buffer);
-
-            // for px in 0..1024 {
-            //     for py in 0..1024 {
-            //         let (t, f) = cartesian_range.reverse_translate((px, py)).unwrap();
-            //
-            //         let red = t / -10.0;
-            //         let blue = f / 22050.0;
-            //
-            //         self.buffer.put_pixel(
-            //             px as u32, py as u32,
-            //             (red * 255.0) as u8,
-            //             0,
-            //             (blue * 255.0) as u8,
-            //             255,
-            //         );
-            //     }
-            // }
-
-
             snapshot.append_texture(
                 &texture,
                 &pixel_range,
