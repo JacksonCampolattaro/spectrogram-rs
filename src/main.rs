@@ -3,6 +3,8 @@ mod fourier;
 mod spectrogram;
 mod log_scaling;
 
+use adw::ColorScheme;
+use adw::prelude::AdwApplicationExt;
 use fourier::{FourierTransform, FrequencySample};
 
 use spectrum_analyzer::SpectrumAnalyzer;
@@ -22,6 +24,7 @@ fn main() -> glib::ExitCode {
     // Create a new application
     let app = adw::Application::builder().application_id(APP_ID).build();
 
+    app.style_manager().set_color_scheme(ColorScheme::PreferDark);
     app.connect_activate(build_ui);
 
     // Run the application

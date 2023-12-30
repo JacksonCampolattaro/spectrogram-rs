@@ -1,5 +1,6 @@
 use std::hash::Hash;
 use adw::glib::Object;
+use color_brewery::ColorRange;
 use gtk::glib;
 use gtk::prelude::WidgetExt;
 use gtk::subclass::prelude::*;
@@ -41,6 +42,7 @@ impl Spectrogram {
 
         let min_db = -70.0;
         let max_db = -10.0;
+        let gradient = self_.palette.gradient();
 
         // Write values to the right column
         for py in 1..buffer.height() {
@@ -55,11 +57,12 @@ impl Spectrogram {
             // println!("{}", magnitude);
             //let magnitude = magnitude.sqrt();
 
+            let color = gradient.rgb(magnitude);
             buffer.put_pixel(
                 (buffer.width() - 1) as u32, py as u32,
-                (magnitude * 255.0) as u8,
-                0,
-                0,
+                color.r,
+                color.g,
+                color.b,
                 255,
             );
         }
@@ -97,10 +100,13 @@ mod imp {
     use crate::log_scaling::*;
     use crate::spectrogram::imp;
     use crate::spectrum_analyzer::SpectrumAnalyzer;
+    use color_brewery::{Palette, RGBColor};
+    use rgb::RGB8;
 
     pub struct Spectrogram {
         pub x_range: RangedCoordf32,
         pub y_range: LogCoordf64,
+        pub palette: Palette<RGB8>,
         pub buffer: Pixbuf,
     }
 
@@ -116,6 +122,7 @@ mod imp {
             Self {
                 x_range: (-10.0..0.0).into(),
                 y_range: (32.0..22050.0).reversible_log_scale().base(2.0).zero_point(0.0).into(),
+                palette: RGB8::magma(),
                 buffer: Pixbuf::new(
                     Colorspace::Rgb,
                     false,
