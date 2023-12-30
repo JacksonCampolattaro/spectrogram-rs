@@ -8,7 +8,7 @@ use num_traits::{Bounded, FloatConst};
 
 const EPSILON: f32 = 1e-7;
 const FFT_WINDOW_SIZE: usize = 2048;
-const FFT_WINDOW_STRIDE: usize = 256;
+const FFT_WINDOW_STRIDE: usize = 128;
 const NUM_FREQUENCIES: usize = 1 + (FFT_WINDOW_SIZE / 2);
 
 pub struct FrequencySample {
@@ -42,12 +42,12 @@ impl FrequencySample {
             self.magnitude_of_frequency((start_frequency + end_frequency) / 2.0)
         } else {
             self.magnitude_of_index_range(start_index.ceil() as usize, end_index.floor() as usize)
-                + self.magnitude_of_frequency(end_frequency) * (end_index % 1.0)
-                + self.magnitude_of_frequency(start_frequency) * ((start_index % 1.0))
+                + self.magnitude_of_frequency(end_frequency) * ((end_index % 1.0))
+                + self.magnitude_of_frequency(start_frequency) * (1.0 - (start_index % 1.0))
         }
     }
     pub fn max_frequency(&self) -> f32 {
-        self.sample_rate.0 as f32
+        (self.sample_rate.0 / 2) as f32
     }
 }
 
@@ -97,16 +97,15 @@ impl FourierTransform {
             let frequency_magnitudes: Vec<_> = self.frequency_buffer.iter()
                 .map(|c| c.norm_sqr())
                 .map(|c| c * scale)
-                // .map(|v: f32| 10.0 * (v + EPSILON).log10())
                 .collect();
 
-            let frequncy_sample = FrequencySample {
+            let frequency_sample = FrequencySample {
                 magnitudes: frequency_magnitudes,
                 sample_rate,
             };
 
             // todo: it might be best to avoid send_blocking if possible
-            self.sender.send_blocking(frequncy_sample).expect("Failed to send data");
+            self.sender.send_blocking(frequency_sample).expect("Failed to send data");
         }
 
         FrequencySample {

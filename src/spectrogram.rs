@@ -22,9 +22,14 @@ impl Spectrogram {
     }
 
     pub fn push_frequencies(&mut self, frequency_sample: FrequencySample) {
+        self.push_frequency_block(&[frequency_sample]);
+    }
+
+    pub fn push_frequency_block(&mut self, frequency_samples: &[FrequencySample]) {
         let self_ = imp::Spectrogram::from_obj(self);
         let buffer = &self_.buffer;
 
+        let num_samples = frequency_samples.len() as i32;
 
         let cartesian_range: Cartesian2d<RangedCoordf32, LogCoordf64> = Cartesian2d::new(
             self_.x_range.clone(),
@@ -32,39 +37,41 @@ impl Spectrogram {
             (0..buffer.width(), 0..buffer.height()),
         );
 
-        // Shift the buffer over by one pixel
+        // Shift the buffer over by n pixels
         buffer.copy_area(
-            1, 0,
-            buffer.width() - 1, buffer.height(),
+            num_samples, 0,
+            buffer.width() - num_samples, buffer.height(),
             buffer,
             0, 0,
         );
 
         let min_db = -70.0;
-        let max_db = -10.0;
+        let max_db = -0.0;
         let gradient = self_.palette.gradient();
 
         // Write values to the right column
-        for py in 1..buffer.height() {
-            let (t, f0) = cartesian_range.reverse_translate((buffer.width() - 1, py - 1)).unwrap();
-            let (t, f1) = cartesian_range.reverse_translate((buffer.width() - 1, py)).unwrap();
+        for (px, frequency_sample) in frequency_samples.iter().enumerate() {
+            for py in 1..buffer.height() {
+                let (_, f0) = cartesian_range.reverse_translate((buffer.width() - 1, py - 1)).unwrap();
+                let (_, f1) = cartesian_range.reverse_translate((buffer.width() - 1, py)).unwrap();
 
-            let py = buffer.height() - py;
+                let magnitude = frequency_sample.mean_magnitude_of_frequency_range(f0 as f32, f1 as f32);
+                let magnitude = 20.0 * (magnitude + 1e-7).log10();
+                let magnitude = ((magnitude - min_db) / (max_db - min_db)) as f64;
 
-            let magnitude = frequency_sample.mean_magnitude_of_frequency_range(f0 as f32, f1 as f32);
-            let magnitude = 20.0 * (magnitude + 1e-7).log10();
-            let magnitude = ((magnitude - min_db) / (max_db - min_db)) as f64;
-            // println!("{}", magnitude);
-            //let magnitude = magnitude.sqrt();
+                let px = (buffer.width() - num_samples) + px as i32;
+                let py = buffer.height() - py - 1;
 
-            let color = gradient.rgb(magnitude);
-            buffer.put_pixel(
-                (buffer.width() - 1) as u32, py as u32,
-                color.r,
-                color.g,
-                color.b,
-                255,
-            );
+                let color = gradient.rgb(magnitude);
+                buffer.put_pixel(
+                    px as u32,
+                    py as u32,
+                    color.r,
+                    color.g,
+                    color.b,
+                    255,
+                );
+            }
         }
 
         self.queue_draw();
@@ -73,34 +80,24 @@ impl Spectrogram {
 
 mod imp {
     use std::error::Error;
-    use std::io;
-    use std::ops::Range;
     use adw::gdk::gdk_pixbuf::Colorspace;
-    use adw::glib::Object;
 
-    use gtk::{gdk, glib, LevelBar, Orientation};
+    use gtk::{gdk, glib};
     use gtk::prelude::*;
     use gtk::subclass::prelude::*;
 
     use gdk::Texture;
 
     use glib::prelude::*;
-    use gtk::gdk::RGBA;
     use gtk::gdk_pixbuf::Pixbuf;
-    use gtk::graphene::Point;
-    use gtk::gsk::ColorStop;
     use plotters::element::Drawable;
 
     use plotters::prelude::*;
     use plotters_cairo::CairoBackend;
-    use plotters::coord::{CoordTranslate, ReverseCoordTranslate};
     use plotters::coord::types::RangedCoordf32;
 
-    use crate::fourier::FrequencySample;
     use crate::log_scaling::*;
-    use crate::spectrogram::imp;
-    use crate::spectrum_analyzer::SpectrumAnalyzer;
-    use color_brewery::{Palette, RGBColor};
+    use color_brewery::{ColorRange, Palette, PaletteGradient, RGBColor};
     use rgb::RGB8;
 
     pub struct Spectrogram {
@@ -117,8 +114,6 @@ mod imp {
         type ParentType = gtk::Widget;
 
         fn new() -> Self {
-            // todo: log scaling will require a custom range implementation
-            // let y_range = ReversibleLogCoord((32.0..22050.0).log_scale().base(2.0).into());
             Self {
                 x_range: (-10.0..0.0).into(),
                 y_range: (32.0..22050.0).reversible_log_scale().base(2.0).zero_point(0.0).into(),
@@ -127,7 +122,7 @@ mod imp {
                     Colorspace::Rgb,
                     false,
                     8,
-                    512, 1024,
+                    1024, 1024,
                 ).unwrap(),
             }
         }
@@ -154,6 +149,10 @@ mod imp {
             snapshot: &gtk::Snapshot,
             bounds: &gtk::graphene::Rect,
         ) -> Result<(), Box<dyn Error>> {
+            let background_color = self.palette.gradient().rgb(0.0);
+            let background_color = plotters::style::RGBColor(background_color.r, background_color.g, background_color.b);
+            let foreground_color = self.palette.gradient().rgb(1.0);
+            let foreground_color = plotters::style::RGBColor(foreground_color.r, foreground_color.g, foreground_color.b);
 
             // Start by drawing the plot bounds
             let pixel_range = {
@@ -164,7 +163,7 @@ mod imp {
                 ).unwrap().into_drawing_area();
 
 
-                root.fill(&BLACK).unwrap();
+                root.fill(&background_color).unwrap();
 
                 let mut chart = ChartBuilder::on(&root)
                     .margin(16)
@@ -179,8 +178,8 @@ mod imp {
 
                 chart
                     .configure_mesh()
-                    .label_style(("sans-serif", 10, &WHITE))
-                    .axis_style(&WHITE)
+                    .label_style(("sans-serif", 10, &foreground_color))
+                    .axis_style(&foreground_color)
                     .disable_mesh()
                     .draw()
                     .unwrap();
