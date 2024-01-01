@@ -2,11 +2,16 @@ mod spectrum_analyzer;
 mod fourier;
 mod spectrogram;
 mod log_scaling;
+mod audio_input_list_model;
+mod audio_device;
 
-use std::cell::Cell;
-use std::rc::Rc;
+use std::borrow::Borrow;
+use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
 
-use adw::ColorScheme;
+use adw::{ColorScheme, gio};
+use adw::glib::translate::{IntoGlibPtr, Stash, ToGlibPtr, UnsafeFrom};
+use adw::glib::value::{FromValue, FromValueOptional, ToValueOptional, ValueType};
 use adw::prelude::AdwApplicationExt;
 use fourier::FourierTransform;
 
@@ -15,12 +20,13 @@ use spectrogram::Spectrogram;
 
 use gtk::prelude::*;
 use gtk::glib;
-use glib::clone;
 use gtk::{ApplicationWindow, Align};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use async_channel;
+use crate::audio_device::AudioDevice;
+use crate::audio_input_list_model::AudioInputListModel;
 
 const APP_ID: &str = "nl.campolattaro.jackson.spectrogram";
 
@@ -54,11 +60,16 @@ fn build_ui(app: &adw::Application) {
     input_stream.play().expect("Failed to start input stream");
     println!("Using device: {}", device.name().unwrap());
 
-    let mut input_dropdown = gtk::DropDown::builder()
+    let input_list = AudioInputListModel::new();
+
+    let input_dropdown = gtk::DropDown::builder()
         .css_classes(["flat"])
-        .build();
-    let mut appearance_dropdown = gtk::DropDown::builder()
-        .css_classes(["flat"])
+        .model(&input_list)
+        .expression(gtk::PropertyExpression::new(
+            AudioDevice::static_type(),
+            None::<&gtk::Expression>,
+            "name",
+        ))
         .build();
 
 
@@ -74,7 +85,6 @@ fn build_ui(app: &adw::Application) {
         .css_classes(["osd", "toolbar"])
         .build();
     toolbar.append(&input_dropdown);
-    toolbar.append(&appearance_dropdown);
 
     // Only show the toolbar when you hover over it
     let hover_event_controller = gtk::EventControllerMotion::builder().build();

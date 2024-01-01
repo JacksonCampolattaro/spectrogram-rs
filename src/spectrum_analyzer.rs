@@ -1,4 +1,4 @@
-use std::iter::{FromFn, zip};
+use std::iter::{zip};
 use gtk::glib;
 use glib::Object;
 use gtk::prelude::*;

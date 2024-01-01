@@ -1,11 +1,10 @@
-use std::hash::Hash;
 use adw::glib::Object;
 use color_brewery::ColorRange;
 use gtk::glib;
 use gtk::prelude::WidgetExt;
 use gtk::subclass::prelude::*;
 use plotters::coord::ranged1d::{KeyPointHint, ReversibleRanged};
-use plotters::coord::{CoordTranslate, ReverseCoordTranslate};
+use plotters::coord::{ReverseCoordTranslate};
 use plotters::coord::types::RangedCoordf32;
 use plotters::prelude::{Cartesian2d, LogScalable, Ranged};
 use crate::fourier::FrequencySample;

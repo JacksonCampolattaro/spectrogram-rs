@@ -6,7 +6,6 @@ use cpal::SampleRate;
 use async_channel::{Sender};
 use num_traits::{Bounded, FloatConst};
 
-const EPSILON: f32 = 1e-7;
 const FFT_WINDOW_SIZE: usize = 2048;
 const FFT_WINDOW_STRIDE: usize = 128;
 const NUM_FREQUENCIES: usize = 1 + (FFT_WINDOW_SIZE / 2);
