@@ -45,7 +45,7 @@ impl Spectrogram {
         );
 
         let min_db = -70.0;
-        let max_db = -0.0;
+        let max_db = 0.0;
         let gradient = self_.palette.gradient();
 
         // Write values to the right column

@@ -5,9 +5,11 @@ mod log_scaling;
 mod audio_input_list_model;
 mod audio_device;
 
+use std::any::Any;
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex};
 
 use adw::{ColorScheme, gio};
 use adw::glib::translate::{IntoGlibPtr, Stash, ToGlibPtr, UnsafeFrom};
@@ -19,12 +21,14 @@ use spectrum_analyzer::SpectrumAnalyzer;
 use spectrogram::Spectrogram;
 
 use gtk::prelude::*;
-use gtk::glib;
+use gtk::{DropDown, glib};
 use gtk::{ApplicationWindow, Align};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use async_channel;
+use cpal::InputCallbackInfo;
+use gtk::glib::subclass::types::FromObject;
 use crate::audio_device::AudioDevice;
 use crate::audio_input_list_model::AudioInputListModel;
 
@@ -44,24 +48,39 @@ fn main() -> glib::ExitCode {
 
 fn build_ui(app: &adw::Application) {
     let (sender, receiver) = async_channel::unbounded();
-
-    let mut fft = FourierTransform::new(sender);
-
     let err_fn = |err| eprintln!("An error occurred on the input audio stream: {}", err);
-    let host = cpal::default_host();
-    let device = host.default_input_device().unwrap();
-    let config = device.default_input_config().unwrap().into();
-    let input_stream = device.build_input_stream(
-        &config,
-        move |data, _| { fft.apply(data, config.sample_rate); },
-        err_fn,
-        None,
-    ).unwrap();
-    input_stream.play().expect("Failed to start input stream");
-    println!("Using device: {}", device.name().unwrap());
+
+    let mut stream = Mutex::new(None::<cpal::Stream>);
+    let start_stream = move |device: &cpal::Device| {
+        let config: cpal::StreamConfig = device.default_input_config().unwrap().into();
+        let mut fft = FourierTransform::new(sender.clone());
+        println!(
+            "Listening to device: {} ({}Hz, {}ch)",
+            device.name().unwrap(),
+            config.sample_rate.0,
+            config.channels
+        );
+        // Attempt to stop any existing stream
+        stream.lock().unwrap().as_ref().map(|stream| {
+            stream.pause().expect("Failed to stop existing stream")
+        });
+        // Start a new stream with the chosen device
+        stream.lock().unwrap().replace(device.build_input_stream(
+            &config,
+            move |data, info| {
+                fft.apply(data, config.sample_rate);
+            },
+            err_fn,
+            None,
+        ).unwrap());
+
+        // Start the newly created stream
+        stream.lock().unwrap().as_ref().map(|stream| {
+            stream.play().expect("Failed to start input stream");
+        });
+    };
 
     let input_list = AudioInputListModel::new();
-
     let input_dropdown = gtk::DropDown::builder()
         .css_classes(["flat"])
         .model(&input_list)
@@ -71,7 +90,12 @@ fn build_ui(app: &adw::Application) {
             "name",
         ))
         .build();
-
+    input_dropdown.connect_selected_item_notify(move |dropdown: &DropDown| {
+        let binding = dropdown.selected_item().unwrap();
+        let device = binding.dynamic_cast_ref::<AudioDevice>().unwrap();
+        start_stream(device.get_device().as_ref());
+    });
+    input_dropdown.notify("selected-item");
 
     let mut toolbar = gtk::Box::builder()
         .margin_start(8)
@@ -118,11 +142,9 @@ fn build_ui(app: &adw::Application) {
             while let Ok(frequency_sample) = receiver.try_recv() {
                 samples.push(frequency_sample);
             }
+
             // Push the entire block at once
             visualizer.push_frequency_block(&samples);
-
-            // Make sure the input stream continues
-            input_stream.play().expect("Failed to start input stream");
         }
     });
 

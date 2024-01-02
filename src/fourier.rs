@@ -7,8 +7,9 @@ use async_channel::{Sender};
 use num_traits::{Bounded, FloatConst};
 
 const FFT_WINDOW_SIZE: usize = 2048;
+const PADDED_FFT_WINDOW_SIZE: usize = FFT_WINDOW_SIZE * 2;
 const FFT_WINDOW_STRIDE: usize = 128;
-const NUM_FREQUENCIES: usize = 1 + (FFT_WINDOW_SIZE / 2);
+const NUM_FREQUENCIES: usize = 1 + (PADDED_FFT_WINDOW_SIZE / 2);
 
 pub struct FrequencySample {
     pub magnitudes: Vec<f32>,
@@ -22,14 +23,16 @@ impl FrequencySample {
     pub fn magnitude_of_frequency(&self, frequency: f32) -> f32 {
         let index = frequency * self.period();
         let offset = index % 1.0;
-        (self.magnitudes[index.ceil() as usize] * offset) + (self.magnitudes[index.floor() as usize] * (1.0 - offset))
+        // cosine interpolation for a smoother-looking plot
+        let offset = (1.0 - f32::cos(offset * f32::PI())) / 2.0;
+        (self.magnitudes[index.floor() as usize] * (1.0 - offset)) + (self.magnitudes[index.ceil() as usize] * offset)
     }
 
     fn magnitude_of_index_range(&self, start: usize, end: usize) -> f32 {
         if start >= end {
             0.0
         } else {
-            self.magnitudes[start..end].iter().sum()
+            self.magnitudes[start..end].iter().sum::<f32>() * ((end - start) as f32)
         }
     }
 
@@ -65,7 +68,7 @@ impl FourierTransform {
         let frequency_buffer = AlignedVec::new(NUM_FREQUENCIES);
 
         let plan = R2CPlan32::aligned(
-            &[FFT_WINDOW_SIZE],
+            &[PADDED_FFT_WINDOW_SIZE],
             fftw::types::Flag::ESTIMATE,
         ).unwrap();
 
@@ -90,7 +93,13 @@ impl FourierTransform {
                 *v = *v * scale;
             }
 
-            self.plan.r2c(&mut window_buffer, &mut self.frequency_buffer).unwrap();
+            let mut padded_window_buffer = AlignedVec::new(PADDED_FFT_WINDOW_SIZE);
+            padded_window_buffer.fill(0.0);
+            for (src, dest) in window_buffer.iter().zip(padded_window_buffer.iter_mut()) {
+                *dest = *src;
+            }
+
+            self.plan.r2c(&mut padded_window_buffer, &mut self.frequency_buffer).unwrap();
 
             let scale = 2.0 / FFT_WINDOW_SIZE as f32;
             let frequency_magnitudes: Vec<_> = self.frequency_buffer.iter()

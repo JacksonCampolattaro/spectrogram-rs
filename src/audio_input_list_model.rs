@@ -22,14 +22,14 @@ impl AudioInputListModel {
 }
 
 mod imp {
-    use cpal::default_host;
     use cpal::traits::{DeviceTrait, HostTrait};
     use itertools::Itertools;
+    use std::rc::Rc;
     use super::*;
 
     pub struct AudioInputListModel {
         host: cpal::Host,
-        devices: Vec<cpal::Device>,
+        devices: Vec<Rc<cpal::Device>>,
     }
 
     #[glib::object_subclass]
@@ -40,8 +40,10 @@ mod imp {
 
         fn new() -> Self {
             let host = cpal::default_host();
-            let devices = default_host().input_devices().unwrap()
-                //.map(|device| { AudioDevice::from(device) })
+            let default_device_name = host.default_input_device().unwrap().name().unwrap();
+            let devices = host.input_devices().unwrap()
+                .sorted_by_cached_key(|d| { return d.name().unwrap() != default_device_name; })
+                .map(Rc::from)
                 .collect();
             Self {
                 host,
@@ -64,7 +66,7 @@ mod imp {
         fn item(&self, position: u32) -> Option<Object> {
             self.devices.iter()
                 .nth(position as usize)
-                .map(|device| { AudioDevice::from(device).into() })
+                .map(|device| { AudioDevice::from(device.clone()).into() })
             // todo: this could be cleaned up
             //Some(AudioDevice::from(self.host.input_devices().unwrap().nth(position as usize).unwrap()).into())
         }
