@@ -2121,6 +2121,7 @@ dependencies = [
  "iter_num_tools",
  "itertools",
  "libadwaita",
+ "ndarray",
  "num-traits",
  "plotters",
  "plotters-backend",

@@ -11,6 +11,8 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
+use ndarray::prelude::*;
+
 use adw::{ColorScheme, gio};
 use adw::glib::translate::{IntoGlibPtr, Stash, ToGlibPtr, UnsafeFrom};
 use adw::glib::value::{FromValue, FromValueOptional, ToValueOptional, ValueType};
@@ -53,7 +55,7 @@ fn build_ui(app: &adw::Application) {
     let mut stream = Mutex::new(None::<cpal::Stream>);
     let start_stream = move |device: &cpal::Device| {
         let config: cpal::StreamConfig = device.default_input_config().unwrap().into();
-        let mut fft = FourierTransform::new(sender.clone());
+        let mut fft = FourierTransform::new(sender.clone(), config.channels as usize);
         println!(
             "Listening to device: {} ({}Hz, {}ch)",
             device.name().unwrap(),
@@ -64,11 +66,16 @@ fn build_ui(app: &adw::Application) {
         stream.lock().unwrap().as_ref().map(|stream| {
             stream.pause().expect("Failed to stop existing stream")
         });
+
         // Start a new stream with the chosen device
         stream.lock().unwrap().replace(device.build_input_stream(
             &config,
-            move |data, info| {
-                fft.apply(data, config.sample_rate);
+            move |data: &[f32], _| {
+                // todo: deinterleave data
+                let deinterleaved = ndarray::Array::from_iter(data.iter().copied())
+                    .into_shape((data.len() / config.channels as usize, config.channels as usize))
+                    .expect("Failed to deinterleave stream").into();
+                fft.apply(&deinterleaved, config.sample_rate);
             },
             err_fn,
             None,

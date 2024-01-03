@@ -3,6 +3,7 @@ use color_brewery::ColorRange;
 use gtk::glib;
 use gtk::prelude::WidgetExt;
 use gtk::subclass::prelude::*;
+use num_traits::Float;
 use plotters::coord::ranged1d::{KeyPointHint, ReversibleRanged};
 use plotters::coord::{ReverseCoordTranslate};
 use plotters::coord::types::RangedCoordf32;
@@ -45,7 +46,7 @@ impl Spectrogram {
         );
 
         let min_db = -70.0;
-        let max_db = 0.0;
+        let max_db = 32.0;
         let gradient = self_.palette.gradient();
 
         // Write values to the right column
@@ -121,7 +122,7 @@ mod imp {
                     Colorspace::Rgb,
                     false,
                     8,
-                    1024, 1024,
+                    2048, 1024,
                 ).unwrap(),
             }
         }
