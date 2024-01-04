@@ -1,8 +1,6 @@
 use gtk::{
-    *,
     glib,
     glib::*,
-    prelude::*,
     subclass::prelude::*,
     gio::ListModel,
 };
@@ -67,8 +65,6 @@ mod imp {
             self.devices.iter()
                 .nth(position as usize)
                 .map(|device| { AudioDevice::from(device.clone()).into() })
-            // todo: this could be cleaned up
-            //Some(AudioDevice::from(self.host.input_devices().unwrap().nth(position as usize).unwrap()).into())
         }
     }
 }

@@ -1,10 +1,17 @@
 use std::iter::{zip};
-use gtk::glib;
-use glib::Object;
-use gtk::prelude::*;
-use gtk::subclass::prelude::ObjectSubclassExt;
 
-use num_traits::{Float, Pow};
+use gtk::{
+    glib,
+    prelude::*,
+    subclass::prelude::*,
+    LevelBar,
+    Orientation
+};
+use glib::{
+    Object,
+};
+
+use num_traits::{Pow};
 
 use crate::fourier::FrequencySample;
 
@@ -62,11 +69,7 @@ impl SpectrumAnalyzer {
 }
 
 mod imp {
-    use gtk::{glib, Orientation};
-    use glib::prelude::*;
-    use gtk::subclass::prelude::*;
-    use gtk::{LevelBar};
-    use gtk::prelude::{BoxExt, WidgetExt};
+    use super::*;
 
     #[derive(Default)]
     pub struct SpectrumAnalyzer {

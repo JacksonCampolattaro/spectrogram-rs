@@ -1,17 +1,15 @@
-use std::cell::{
-    Cell,
-    RefCell,
-};
-use std::ops::Deref;
+use std::cell::RefCell;
 use std::rc::Rc;
+
+use cpal::default_host;
 use cpal::Device;
 use cpal::traits::DeviceTrait;
+use cpal::traits::HostTrait;
 use gtk::{
     glib,
     glib::{
-        Properties,
-        GString,
         Object,
+        Properties,
     },
     prelude::*,
     subclass::prelude::*,
@@ -23,7 +21,7 @@ glib::wrapper! {
 
 impl AudioDevice {
     pub fn get_device(&self) -> Rc<Device> {
-        let mut imp = imp::AudioDevice::from_obj(self);
+        let imp = imp::AudioDevice::from_obj(self);
         imp.device.borrow().clone()
     }
 }
@@ -31,17 +29,13 @@ impl AudioDevice {
 impl From<Rc<Device>> for AudioDevice {
     fn from(device: Rc<Device>) -> AudioDevice {
         let object = Object::builder().build();
-        let mut imp = imp::AudioDevice::from_obj(&object);
+        let imp = imp::AudioDevice::from_obj(&object);
         imp.device.replace(device);
         object
     }
 }
 
 mod imp {
-    use std::cell::Ref;
-    use std::marker::PhantomData;
-    use cpal::default_host;
-    use cpal::traits::HostTrait;
     use super::*;
 
     #[derive(Properties)]

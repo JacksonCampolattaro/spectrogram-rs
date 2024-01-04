@@ -73,7 +73,7 @@ pub struct FourierTransform {
 
 impl FourierTransform {
     pub fn new(sender: Sender<FrequencySample>, channels: usize) -> Self {
-        let mut sample_buffers = (0..channels)
+        let sample_buffers = (0..channels)
             .map(|_| { vec![0.0; FFT_WINDOW_SIZE] })
             .collect();
 
@@ -144,7 +144,9 @@ impl FourierTransform {
                 magnitudes: magnitudes[0].clone(),
                 sample_rate,
             };
-            self.sender.send_blocking(frequency_sample).expect("Failed to send data");
+
+            // We don't care whether the sample actually goes through, so no .expect() here.
+            self.sender.try_send(frequency_sample).ok();
         }
     }
 }

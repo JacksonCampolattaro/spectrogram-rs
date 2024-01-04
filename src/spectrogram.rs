@@ -1,15 +1,30 @@
 use adw::glib::Object;
-use color_brewery::ColorRange;
-use gtk::gdk_pixbuf::Pixbuf;
-use gtk::glib;
-use gtk::prelude::WidgetExt;
-use gtk::subclass::prelude::*;
-use num_traits::Float;
-use plotters::coord::{ReverseCoordTranslate};
-use plotters::coord::types::RangedCoordf32;
-use plotters::prelude::{Cartesian2d, LogScalable, Ranged};
+use std::error::Error;
+
+use gtk::{
+    gdk,
+    glib,
+    prelude::*,
+    subclass::prelude::*,
+};
+
+use gdk::{
+    Texture,
+    gdk_pixbuf::*
+};
+
+use plotters::prelude::*;
+use plotters::coord::{
+    ReverseCoordTranslate,
+    types::RangedCoordf32
+};
+use plotters_cairo::CairoBackend;
+
+use color_brewery::{ColorRange, Palette, RGBColor};
+use rgb::RGB8;
+
 use crate::fourier::FrequencySample;
-use crate::log_scaling::LogCoordf64;
+use crate::log_scaling::*;
 
 glib::wrapper! {
     pub struct Spectrogram(ObjectSubclass<imp::Spectrogram>)
@@ -27,7 +42,7 @@ impl Spectrogram {
 
     pub fn push_frequency_block(&self, frequency_samples: &[FrequencySample]) {
         let self_ = imp::Spectrogram::from_obj(self);
-        let buffer = self_.buffer.borrow();
+        let buffer = &self_.buffer;
 
         let num_samples = frequency_samples.len() as i32;
 
@@ -41,7 +56,7 @@ impl Spectrogram {
         buffer.copy_area(
             num_samples, 0,
             buffer.width() - num_samples, buffer.height(),
-            buffer.as_ref(),
+            buffer,
             0, 0,
         );
 
@@ -79,33 +94,13 @@ impl Spectrogram {
 }
 
 mod imp {
-    use std::cell::RefCell;
-    use std::error::Error;
-    use adw::gdk::gdk_pixbuf::Colorspace;
-
-    use gtk::{gdk, glib};
-    use gtk::prelude::*;
-    use gtk::subclass::prelude::*;
-
-    use gdk::Texture;
-
-    use glib::prelude::*;
-    use gtk::gdk_pixbuf::Pixbuf;
-    use plotters::element::Drawable;
-
-    use plotters::prelude::*;
-    use plotters_cairo::CairoBackend;
-    use plotters::coord::types::RangedCoordf32;
-
-    use crate::log_scaling::*;
-    use color_brewery::{ColorRange, Palette, PaletteGradient, RGBColor};
-    use rgb::RGB8;
+    use super::*;
 
     pub struct Spectrogram {
         pub x_range: RangedCoordf32,
         pub y_range: LogCoordf64,
         pub palette: Palette<RGB8>,
-        pub buffer: RefCell<Pixbuf>,
+        pub buffer: Pixbuf,
     }
 
     #[glib::object_subclass]
@@ -124,7 +119,7 @@ mod imp {
                     false,
                     8,
                     2048, 1024,
-                ).unwrap().into(),
+                ).unwrap(),
             }
         }
     }
@@ -197,7 +192,7 @@ mod imp {
             };
 
             // Draw the contents of the plot
-            let texture = Texture::for_pixbuf(&self.buffer.borrow().as_ref());
+            let texture = Texture::for_pixbuf(&self.buffer);
             snapshot.append_texture(
                 &texture,
                 &pixel_range,

@@ -1,39 +1,30 @@
+use std::sync::Mutex;
+
+use adw::ColorScheme;
+use adw::glib::ControlFlow::Continue;
+use adw::prelude::AdwApplicationExt;
+use async_channel;
+use cpal::traits::{DeviceTrait, StreamTrait};
+use gtk::{
+    DropDown,
+    glib,
+    Align,
+    ApplicationWindow
+};
+use gtk::prelude::*;
+
+use fourier::FourierTransform;
+use spectrogram::Spectrogram;
+
+use crate::audio_device::AudioDevice;
+use crate::audio_input_list_model::AudioInputListModel;
+
 mod spectrum_analyzer;
 mod fourier;
 mod spectrogram;
 mod log_scaling;
 mod audio_input_list_model;
 mod audio_device;
-
-use std::any::Any;
-use std::borrow::Borrow;
-use std::fmt::Debug;
-use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
-
-use ndarray::prelude::*;
-
-use adw::{ColorScheme, gio};
-use adw::glib::ControlFlow::Continue;
-use adw::glib::translate::{IntoGlibPtr, Stash, ToGlibPtr, UnsafeFrom};
-use adw::glib::value::{FromValue, FromValueOptional, ToValueOptional, ValueType};
-use adw::prelude::AdwApplicationExt;
-use fourier::FourierTransform;
-
-use spectrum_analyzer::SpectrumAnalyzer;
-use spectrogram::Spectrogram;
-
-use gtk::prelude::*;
-use gtk::{DropDown, glib};
-use gtk::{ApplicationWindow, Align};
-
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-
-use async_channel;
-use cpal::InputCallbackInfo;
-use gtk::glib::subclass::types::FromObject;
-use crate::audio_device::AudioDevice;
-use crate::audio_input_list_model::AudioInputListModel;
 
 const APP_ID: &str = "nl.campolattaro.jackson.spectrogram";
 
@@ -53,7 +44,7 @@ fn build_ui(app: &adw::Application) {
     let (sender, receiver) = async_channel::unbounded();
     let err_fn = |err| eprintln!("An error occurred on the input audio stream: {}", err);
 
-    let mut stream = Mutex::new(None::<cpal::Stream>);
+    let stream = Mutex::new(None::<cpal::Stream>);
     let start_stream = move |device: &cpal::Device| {
         let config: cpal::StreamConfig = device.default_input_config().unwrap().into();
         let mut fft = FourierTransform::new(sender.clone(), config.channels as usize);
@@ -105,7 +96,7 @@ fn build_ui(app: &adw::Application) {
     });
     input_dropdown.notify("selected-item");
 
-    let mut toolbar = gtk::Box::builder()
+    let toolbar = gtk::Box::builder()
         .margin_start(8)
         .margin_end(8)
         .margin_top(8)
@@ -121,14 +112,14 @@ fn build_ui(app: &adw::Application) {
     // Only show the toolbar when you hover over it
     let hover_event_controller = gtk::EventControllerMotion::builder().build();
     hover_event_controller.bind_property("contains-pointer", &toolbar, "opacity")
-        .transform_to(|b, v| { if v { Some(1.0) } else { Some(0.0) } })
+        .transform_to(|_, v| { if v { Some(1.0) } else { Some(0.0) } })
         .sync_create()
         .build();
     toolbar.add_controller(hover_event_controller);
 
     // create a window and set the title
-    let mut visualizer = Spectrogram::new();
-    let mut overlay = gtk::Overlay::builder()
+    let visualizer = Spectrogram::new();
+    let overlay = gtk::Overlay::builder()
         .child(&visualizer)
         .build();
     overlay.add_overlay(&toolbar);
