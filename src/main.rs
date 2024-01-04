@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use ndarray::prelude::*;
 
 use adw::{ColorScheme, gio};
+use adw::glib::ControlFlow::Continue;
 use adw::glib::translate::{IntoGlibPtr, Stash, ToGlibPtr, UnsafeFrom};
 use adw::glib::value::{FromValue, FromValueOptional, ToValueOptional, ValueType};
 use adw::prelude::AdwApplicationExt;
@@ -140,19 +141,17 @@ fn build_ui(app: &adw::Application) {
         .child(&overlay)
         .build();
 
-    glib::spawn_future_local(async move {
-        // Wait for the next sample to arrive
-        while let Ok(frequency_sample) = receiver.recv().await {
-            let mut samples = vec![frequency_sample];
+    visualizer.add_tick_callback(move |visualizer, _| {
+        let mut samples = Vec::new();
 
-            // Consume any extra values in the pipeline
-            while let Ok(frequency_sample) = receiver.try_recv() {
-                samples.push(frequency_sample);
-            }
-
-            // Push the entire block at once
-            visualizer.push_frequency_block(&samples);
+        // Consume any extra values in the pipeline
+        while let Ok(frequency_sample) = receiver.try_recv() {
+            samples.push(frequency_sample);
         }
+
+        // Push the entire block at once
+        visualizer.push_frequency_block(&samples);
+        Continue
     });
 
     // Present window

@@ -1,14 +1,12 @@
 use std::iter::zip;
 use fftw::plan::{R2CPlan, R2CPlan32};
 use fftw::array::AlignedVec;
-use fftw::types::c32;
 
 use cpal::SampleRate;
 use async_channel::{Sender};
 use iter_num_tools::lin_space;
-use itertools::Itertools;
 use ndarray::Axis;
-use num_traits::{Bounded, FloatConst};
+use num_traits::FloatConst;
 
 const FFT_WINDOW_SIZE: usize = 2048;
 const PADDED_FFT_WINDOW_SIZE: usize = FFT_WINDOW_SIZE * 2;
@@ -81,7 +79,7 @@ impl FourierTransform {
 
         let plan = R2CPlan32::aligned(
             &[PADDED_FFT_WINDOW_SIZE],
-            fftw::types::Flag::ESTIMATE,
+            fftw::types::Flag::MEASURE,
         ).unwrap();
 
         FourierTransform {

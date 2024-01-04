@@ -1,10 +1,10 @@
 use adw::glib::Object;
 use color_brewery::ColorRange;
+use gtk::gdk_pixbuf::Pixbuf;
 use gtk::glib;
 use gtk::prelude::WidgetExt;
 use gtk::subclass::prelude::*;
 use num_traits::Float;
-use plotters::coord::ranged1d::{KeyPointHint, ReversibleRanged};
 use plotters::coord::{ReverseCoordTranslate};
 use plotters::coord::types::RangedCoordf32;
 use plotters::prelude::{Cartesian2d, LogScalable, Ranged};
@@ -21,13 +21,13 @@ impl Spectrogram {
         Object::builder().build()
     }
 
-    pub fn push_frequencies(&mut self, frequency_sample: FrequencySample) {
+    pub fn push_frequencies(&self, frequency_sample: FrequencySample) {
         self.push_frequency_block(&[frequency_sample]);
     }
 
-    pub fn push_frequency_block(&mut self, frequency_samples: &[FrequencySample]) {
+    pub fn push_frequency_block(&self, frequency_samples: &[FrequencySample]) {
         let self_ = imp::Spectrogram::from_obj(self);
-        let buffer = &self_.buffer;
+        let buffer = self_.buffer.borrow();
 
         let num_samples = frequency_samples.len() as i32;
 
@@ -41,7 +41,7 @@ impl Spectrogram {
         buffer.copy_area(
             num_samples, 0,
             buffer.width() - num_samples, buffer.height(),
-            buffer,
+            buffer.as_ref(),
             0, 0,
         );
 
@@ -79,6 +79,7 @@ impl Spectrogram {
 }
 
 mod imp {
+    use std::cell::RefCell;
     use std::error::Error;
     use adw::gdk::gdk_pixbuf::Colorspace;
 
@@ -104,7 +105,7 @@ mod imp {
         pub x_range: RangedCoordf32,
         pub y_range: LogCoordf64,
         pub palette: Palette<RGB8>,
-        pub buffer: Pixbuf,
+        pub buffer: RefCell<Pixbuf>,
     }
 
     #[glib::object_subclass]
@@ -123,7 +124,7 @@ mod imp {
                     false,
                     8,
                     2048, 1024,
-                ).unwrap(),
+                ).unwrap().into(),
             }
         }
     }
@@ -196,7 +197,7 @@ mod imp {
             };
 
             // Draw the contents of the plot
-            let texture = Texture::for_pixbuf(&self.buffer);
+            let texture = Texture::for_pixbuf(&self.buffer.borrow().as_ref());
             snapshot.append_texture(
                 &texture,
                 &pixel_range,
