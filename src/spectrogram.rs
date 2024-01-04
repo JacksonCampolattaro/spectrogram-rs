@@ -1,30 +1,31 @@
 use adw::glib::Object;
 use std::error::Error;
+use std::cell::RefCell;
 
 use gtk::{
     gdk,
     glib,
+    glib::Properties,
+    gsk::ScalingFilter,
     prelude::*,
     subclass::prelude::*,
 };
 
 use gdk::{
     Texture,
-    gdk_pixbuf::*
+    gdk_pixbuf::*,
 };
 
 use plotters::prelude::*;
 use plotters::coord::{
     ReverseCoordTranslate,
-    types::RangedCoordf32
+    types::RangedCoordf32,
 };
 use plotters_cairo::CairoBackend;
 
-use color_brewery::{ColorRange, Palette, RGBColor};
-use rgb::RGB8;
-
 use crate::fourier::FrequencySample;
 use crate::log_scaling::*;
+use crate::colorscheme::*;
 
 glib::wrapper! {
     pub struct Spectrogram(ObjectSubclass<imp::Spectrogram>)
@@ -62,7 +63,6 @@ impl Spectrogram {
 
         let min_db = -70.0;
         let max_db = 32.0;
-        let gradient = self_.palette.gradient();
 
         // Write values to the right column
         for (px, frequency_sample) in frequency_samples.iter().enumerate() {
@@ -77,7 +77,7 @@ impl Spectrogram {
                 let px = (buffer.width() - num_samples) + px as i32;
                 let py = buffer.height() - py - 1;
 
-                let color = gradient.rgb(magnitude);
+                let color = self_.palette.borrow().get_gradient().eval_continuous(magnitude);
                 buffer.put_pixel(
                     px as u32,
                     py as u32,
@@ -94,12 +94,16 @@ impl Spectrogram {
 }
 
 mod imp {
+    use std::cell::Ref;
     use super::*;
 
+    #[derive(Properties)]
+    #[properties(wrapper_type = super::Spectrogram)]
     pub struct Spectrogram {
         pub x_range: RangedCoordf32,
         pub y_range: LogCoordf64,
-        pub palette: Palette<RGB8>,
+        #[property(get, set)]
+        pub palette: RefCell<ColorScheme>,
         pub buffer: Pixbuf,
     }
 
@@ -110,20 +114,26 @@ mod imp {
         type ParentType = gtk::Widget;
 
         fn new() -> Self {
+            let buffer = Pixbuf::new(
+                Colorspace::Rgb,
+                false,
+                8,
+                2048, 1024,
+            ).unwrap();
+            let palette: RefCell<ColorScheme> = ColorScheme::new(colorous::MAGMA, "magma").into();
+            let color = palette.borrow().get_gradient().eval_continuous(0.0);
+            let color = u32::from_be_bytes([color.r, color.g, color.b, 255]);
+            buffer.fill(color);
             Self {
                 x_range: (-10.0..0.0).into(),
                 y_range: (32.0..22050.0).reversible_log_scale().base(2.0).zero_point(0.0).into(),
-                palette: RGB8::magma(),
-                buffer: Pixbuf::new(
-                    Colorspace::Rgb,
-                    false,
-                    8,
-                    2048, 1024,
-                ).unwrap(),
+                palette,
+                buffer
             }
         }
     }
 
+    #[glib::derived_properties]
     impl ObjectImpl for Spectrogram {}
 
     impl WidgetImpl for Spectrogram {
@@ -145,10 +155,10 @@ mod imp {
             snapshot: &gtk::Snapshot,
             bounds: &gtk::graphene::Rect,
         ) -> Result<(), Box<dyn Error>> {
-            let background_color = self.palette.gradient().rgb(0.0);
-            let background_color = plotters::style::RGBColor(background_color.r, background_color.g, background_color.b);
-            let foreground_color = self.palette.gradient().rgb(1.0);
-            let foreground_color = plotters::style::RGBColor(foreground_color.r, foreground_color.g, foreground_color.b);
+            let background_color = self.palette.borrow().get_gradient().eval_continuous(0.0);
+            let background_color = RGBColor(background_color.r, background_color.g, background_color.b);
+            let foreground_color = self.palette.borrow().get_gradient().eval_continuous(1.0);
+            let foreground_color = RGBColor(foreground_color.r, foreground_color.g, foreground_color.b);
 
             // Start by drawing the plot bounds
             let pixel_range = {
@@ -157,7 +167,6 @@ mod imp {
                     &cr,
                     (bounds.width() as u32, bounds.height() as u32),
                 ).unwrap().into_drawing_area();
-
 
                 root.fill(&background_color).unwrap();
 
@@ -184,8 +193,8 @@ mod imp {
 
                 let pixel_range = chart.plotting_area().get_pixel_range();
                 gtk::graphene::Rect::new(
-                    (pixel_range.0.start - 1) as f32,
-                    (pixel_range.1.start) as f32,
+                    (pixel_range.0.start) as f32 - 0.5,
+                    (pixel_range.1.start) as f32 - 0.5,
                     (pixel_range.0.end - pixel_range.0.start) as f32,
                     (pixel_range.1.end - pixel_range.1.start) as f32,
                 )
@@ -193,8 +202,9 @@ mod imp {
 
             // Draw the contents of the plot
             let texture = Texture::for_pixbuf(&self.buffer);
-            snapshot.append_texture(
+            snapshot.append_scaled_texture(
                 &texture,
+                ScalingFilter::Nearest, //
                 &pixel_range,
             );
 

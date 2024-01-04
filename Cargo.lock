@@ -318,20 +318,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "color-brewery"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "108994d23a9d7608d2ccbc6ac82b9d9126d0d9f626ed47dde1e49a8716863eef"
-dependencies = [
- "lazy_static 1.4.0",
- "rgb",
-]
-
-[[package]]
 name = "color_quant"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
+
+[[package]]
+name = "colorous"
+version = "1.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7eb0838c7c2f4548ff2218bfdcc6ce3d34ffabd0128bfb9eb44cf27de1ec38b3"
 
 [[package]]
 name = "combine"
@@ -1960,15 +1956,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
 
 [[package]]
-name = "rgb"
-version = "0.8.37"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05aaa8004b64fd573fc9d002f4e632d51ad4f026c2b5ba95fcb6c2f32c2c47d8"
-dependencies = [
- "bytemuck",
-]
-
-[[package]]
 name = "ringbuf"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2114,7 +2101,7 @@ name = "spectrogram-rs"
 version = "0.1.0"
 dependencies = [
  "async-channel",
- "color-brewery",
+ "colorous",
  "cpal",
  "fftw",
  "gtk4",
@@ -2126,7 +2113,6 @@ dependencies = [
  "plotters",
  "plotters-backend",
  "plotters-cairo",
- "rgb",
  "ringbuf 0.3.3",
  "ringbuf-blocking",
 ]

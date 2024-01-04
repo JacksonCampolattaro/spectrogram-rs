@@ -9,7 +9,9 @@ use gtk::{
     DropDown,
     glib,
     Align,
-    ApplicationWindow
+    ApplicationWindow,
+    // todo: this will be useful when I want the UI to match the current color scheme
+    // style_context_add_provider_for_display
 };
 use gtk::prelude::*;
 
@@ -18,6 +20,7 @@ use spectrogram::Spectrogram;
 
 use crate::audio_device::AudioDevice;
 use crate::audio_input_list_model::AudioInputListModel;
+use crate::colorscheme::*;
 
 mod spectrum_analyzer;
 mod fourier;
@@ -25,6 +28,7 @@ mod spectrogram;
 mod log_scaling;
 mod audio_input_list_model;
 mod audio_device;
+mod colorscheme;
 
 const APP_ID: &str = "nl.campolattaro.jackson.spectrogram";
 
@@ -33,7 +37,10 @@ fn main() -> glib::ExitCode {
     // Create a new application
     let app = adw::Application::builder().application_id(APP_ID).build();
 
+    // Configuring styling
     app.style_manager().set_color_scheme(ColorScheme::PreferDark);
+
+    // Setup fft & UI on startup
     app.connect_activate(build_ui);
 
     // Run the application
@@ -79,9 +86,10 @@ fn build_ui(app: &adw::Application) {
         });
     };
 
+    let visualizer = Spectrogram::new();
+
     let input_list = AudioInputListModel::new();
-    let input_dropdown = gtk::DropDown::builder()
-        .css_classes(["flat"])
+    let input_dropdown = DropDown::builder()
         .model(&input_list)
         .expression(gtk::PropertyExpression::new(
             AudioDevice::static_type(),
@@ -96,6 +104,19 @@ fn build_ui(app: &adw::Application) {
     });
     input_dropdown.notify("selected-item");
 
+    let colorscheme_list = default_color_schemes();
+    let colorscheme_dropdown = DropDown::builder()
+        .model(&colorscheme_list)
+        .expression(gtk::PropertyExpression::new(
+            AudioDevice::static_type(),
+            None::<&gtk::Expression>,
+            "name",
+        ))
+        .build();
+    colorscheme_dropdown.bind_property("selected_item", &visualizer, "palette")
+        .sync_create()
+        .build();
+
     let toolbar = gtk::Box::builder()
         .margin_start(8)
         .margin_end(8)
@@ -108,6 +129,7 @@ fn build_ui(app: &adw::Application) {
         .css_classes(["osd", "toolbar"])
         .build();
     toolbar.append(&input_dropdown);
+    toolbar.append(&colorscheme_dropdown);
 
     // Only show the toolbar when you hover over it
     let hover_event_controller = gtk::EventControllerMotion::builder().build();
@@ -117,12 +139,12 @@ fn build_ui(app: &adw::Application) {
         .build();
     toolbar.add_controller(hover_event_controller);
 
-    // create a window and set the title
-    let visualizer = Spectrogram::new();
     let overlay = gtk::Overlay::builder()
         .child(&visualizer)
         .build();
     overlay.add_overlay(&toolbar);
+
+    // create a window and set the title
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Spectrogram")
@@ -135,7 +157,7 @@ fn build_ui(app: &adw::Application) {
     visualizer.add_tick_callback(move |visualizer, _| {
         let mut samples = Vec::new();
 
-        // Consume any extra values in the pipeline
+        // Consume any values in the pipeline
         while let Ok(frequency_sample) = receiver.try_recv() {
             samples.push(frequency_sample);
         }
