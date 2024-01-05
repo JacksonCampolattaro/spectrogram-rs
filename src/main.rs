@@ -1,19 +1,16 @@
 use std::sync::Mutex;
 
 use adw::ColorScheme;
+use adw::glib::clone;
 use adw::glib::ControlFlow::Continue;
 use adw::prelude::AdwApplicationExt;
 use async_channel;
 use cpal::traits::{DeviceTrait, StreamTrait};
-use gtk::{
-    DropDown,
-    glib,
-    Align,
-    ApplicationWindow,
-    // todo: this will be useful when I want the UI to match the current color scheme
-    // style_context_add_provider_for_display
-};
+use gtk::{DropDown, glib, Align, ApplicationWindow, RevealerTransitionType, Overlay};
+use gtk::glib::BindingFlags;
+use gtk::glib::gobject_ffi::GBindingGroup;
 use gtk::prelude::*;
+use itertools::rev;
 
 use fourier::FourierTransform;
 use spectrogram::Spectrogram;
@@ -87,6 +84,10 @@ fn build_ui(app: &adw::Application) {
     };
 
     let visualizer = Spectrogram::new();
+    visualizer.set_focusable(true);
+    // visualizer.set_can_focus(true);
+    // visualizer.set_focus_on_click(true);
+    // visualizer.set_can_target(true);
 
     let input_list = AudioInputListModel::new();
     let input_dropdown = DropDown::builder()
@@ -117,41 +118,50 @@ fn build_ui(app: &adw::Application) {
         .sync_create()
         .build();
 
-    let toolbar = gtk::Box::builder()
-        .margin_start(8)
-        .margin_end(8)
-        .margin_top(8)
-        .margin_bottom(8)
-        .hexpand(false)
+    let toolbar = adw::HeaderBar::builder()
         .vexpand(false)
-        .halign(Align::End)
         .valign(Align::Start)
-        .css_classes(["osd", "toolbar"])
+        .css_classes(["osd"])
         .build();
-    toolbar.append(&input_dropdown);
-    toolbar.append(&colorscheme_dropdown);
+    toolbar.pack_end(&input_dropdown);
+    toolbar.pack_end(&colorscheme_dropdown);
 
     // Only show the toolbar when you hover over it
-    let hover_event_controller = gtk::EventControllerMotion::builder().build();
-    hover_event_controller.bind_property("contains-pointer", &toolbar, "opacity")
-        .transform_to(|_, v| { if v { Some(1.0) } else { Some(0.0) } })
-        .sync_create()
+    let revealer = gtk::Revealer::builder()
+        .child(&toolbar)
+        .transition_type(RevealerTransitionType::Crossfade)
+        .vexpand(false)
+        .valign(Align::Start)
         .build();
-    toolbar.add_controller(hover_event_controller);
 
+    // Show the toolbar when you hover over it
+    let toolbar_hover_controller = gtk::EventControllerMotion::builder().build();
+    toolbar_hover_controller.connect_enter(clone!(@weak revealer => move |_, _, _| {
+        revealer.set_reveal_child(true);
+    }));
+    revealer.add_controller(toolbar_hover_controller);
+
+    // Hide the toolbar when you hover over the visualizer
+    let visualizer_hover_controller = gtk::EventControllerMotion::builder().build();
+    visualizer_hover_controller.connect_enter(clone!(@weak revealer => move |_, _, _| {
+        revealer.set_reveal_child(false);
+    }));
+    visualizer.add_controller(visualizer_hover_controller);
+
+    // Use an overlay so the toolbar can overlap the content
     let overlay = gtk::Overlay::builder()
         .child(&visualizer)
         .build();
-    overlay.add_overlay(&toolbar);
+    overlay.add_overlay(&revealer);
 
     // create a window and set the title
-    let window = ApplicationWindow::builder()
+    let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("Spectrogram")
         .default_height(300)
         .default_width(600)
         .decorated(true)
-        .child(&overlay)
+        .content(&overlay)
         .build();
 
     visualizer.add_tick_callback(move |visualizer, _| {

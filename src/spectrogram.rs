@@ -66,9 +66,9 @@ impl Spectrogram {
 
         // Write values to the right column
         for (px, frequency_sample) in frequency_samples.iter().enumerate() {
-            for py in 1..buffer.height() {
-                let (_, f0) = cartesian_range.reverse_translate((buffer.width() - 1, py - 1)).unwrap();
-                let (_, f1) = cartesian_range.reverse_translate((buffer.width() - 1, py)).unwrap();
+            for py in 0..buffer.height() {
+                let (_, f0) = cartesian_range.reverse_translate((buffer.width() - 1, py)).unwrap();
+                let (_, f1) = cartesian_range.reverse_translate((buffer.width() - 1, py + 1)).unwrap();
 
                 let magnitude = frequency_sample.mean_magnitude_of_frequency_range(f0 as f32, f1 as f32);
                 let magnitude = 20.0 * (magnitude + 1e-7).log10();

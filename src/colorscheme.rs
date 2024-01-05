@@ -9,7 +9,7 @@ use gtk::{
     prelude::*,
     subclass::prelude::*,
 };
-use colorous::{BLUES, CIVIDIS, COOL, CUBEHELIX, Gradient, GREENS, GREYS, INFERNO, MAGMA, ORANGES, PLASMA, REDS, SPECTRAL, TURBO, VIRIDIS};
+use colorous::*;
 
 glib::wrapper! {
     pub struct ColorScheme(ObjectSubclass<imp::ColorScheme>);
@@ -70,6 +70,7 @@ pub fn default_color_schemes() -> ListStore {
         ColorScheme::new(PLASMA, "Plasma"),
         ColorScheme::new(CIVIDIS, "Cividis"),
         ColorScheme::new(CUBEHELIX, "Cube-helix"),
+        ColorScheme::new(TURBO, "Turbo"),
         ColorScheme::new(COOL, "Cool"),
         ColorScheme::new(REDS, "Reds"),
         ColorScheme::new(BLUES, "Blues"),
