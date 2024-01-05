@@ -26,7 +26,7 @@ mod imp {
     use super::*;
 
     pub struct AudioInputListModel {
-        host: cpal::Host,
+        _host: cpal::Host,
         devices: Vec<Rc<cpal::Device>>,
     }
 
@@ -37,14 +37,14 @@ mod imp {
         type Interfaces = (ListModel, );
 
         fn new() -> Self {
-            let host = cpal::default_host();
-            let default_device_name = host.default_input_device().unwrap().name().unwrap();
-            let devices = host.input_devices().unwrap()
+            let _host = cpal::default_host();
+            let default_device_name = _host.default_input_device().unwrap().name().unwrap();
+            let devices = _host.input_devices().unwrap()
                 .sorted_by_cached_key(|d| { return d.name().unwrap() != default_device_name; })
                 .map(Rc::from)
                 .collect();
             Self {
-                host,
+                _host,
                 devices,
             }
         }

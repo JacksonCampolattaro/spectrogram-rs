@@ -94,7 +94,6 @@ impl Spectrogram {
 }
 
 mod imp {
-    use std::cell::Ref;
     use super::*;
 
     #[derive(Properties)]

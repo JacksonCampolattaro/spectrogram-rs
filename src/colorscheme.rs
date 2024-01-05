@@ -60,7 +60,7 @@ mod imp {
 }
 
 pub fn default_color_schemes() -> ListStore {
-    let mut list = ListStore::builder()
+    let list = ListStore::builder()
         .item_type(ColorScheme::static_type())
         .build();
     list.extend_from_slice(&[

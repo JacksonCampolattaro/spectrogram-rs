@@ -6,11 +6,8 @@ use adw::glib::ControlFlow::Continue;
 use adw::prelude::AdwApplicationExt;
 use async_channel;
 use cpal::traits::{DeviceTrait, StreamTrait};
-use gtk::{DropDown, glib, Align, ApplicationWindow, RevealerTransitionType, Overlay};
-use gtk::glib::BindingFlags;
-use gtk::glib::gobject_ffi::GBindingGroup;
+use gtk::{DropDown, glib, Align, RevealerTransitionType, Overlay};
 use gtk::prelude::*;
-use itertools::rev;
 
 use fourier::FourierTransform;
 use spectrogram::Spectrogram;
@@ -84,10 +81,6 @@ fn build_ui(app: &adw::Application) {
     };
 
     let visualizer = Spectrogram::new();
-    visualizer.set_focusable(true);
-    // visualizer.set_can_focus(true);
-    // visualizer.set_focus_on_click(true);
-    // visualizer.set_can_target(true);
 
     let input_list = AudioInputListModel::new();
     let input_dropdown = DropDown::builder()
@@ -149,7 +142,7 @@ fn build_ui(app: &adw::Application) {
     visualizer.add_controller(visualizer_hover_controller);
 
     // Use an overlay so the toolbar can overlap the content
-    let overlay = gtk::Overlay::builder()
+    let overlay = Overlay::builder()
         .child(&visualizer)
         .build();
     overlay.add_overlay(&revealer);
