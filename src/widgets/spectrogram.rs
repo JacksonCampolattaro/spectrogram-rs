@@ -23,7 +23,7 @@ use plotters::coord::{
 };
 use plotters_cairo::CairoBackend;
 
-use crate::frequency_sample::{Frequency, FrequencySample};
+use crate::fourier::frequency_sample::{Frequency, FrequencySample};
 use crate::log_scaling::*;
 use crate::colorscheme::*;
 

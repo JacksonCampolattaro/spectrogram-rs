@@ -12,7 +12,9 @@ use glib::{
 };
 
 use num_traits::{Pow};
-use crate::frequency_sample::{Frequency, FrequencySample};
+use crate::fourier::frequency_sample::{Frequency, FrequencySample};
+// use crate::fourier::{Frequency, FrequencySample}
+// use crate::frequency_sample::{Frequency, FrequencySample};
 
 fn log_space(start: f32, end: f32, n: usize, base: f32) -> impl Iterator<Item=f32> + Clone {
     // println!("{}, {}", start, end);

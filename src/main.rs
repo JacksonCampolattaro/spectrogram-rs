@@ -5,26 +5,23 @@ use adw::glib::clone;
 use adw::glib::ControlFlow::Continue;
 use adw::prelude::AdwApplicationExt;
 use async_channel;
-use async_channel::Receiver;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use gtk::{DropDown, glib, Align, RevealerTransitionType, Overlay};
 use gtk::prelude::*;
 
 use fourier::FourierTransform;
-use spectrogram::Spectrogram;
+use widgets::spectrogram::Spectrogram;
+use devices::audio_device::AudioDevice;
+use devices::audio_input_list_model::AudioInputListModel;
 
-use crate::audio_device::AudioDevice;
-use crate::audio_input_list_model::AudioInputListModel;
 use crate::colorscheme::*;
 
-mod spectrum_analyzer;
 mod fourier;
-mod spectrogram;
+mod widgets;
+mod devices;
+
 mod log_scaling;
-mod audio_input_list_model;
-mod audio_device;
 mod colorscheme;
-mod frequency_sample;
 
 const APP_ID: &str = "nl.campolattaro.jackson.spectrogram";
 
@@ -66,7 +63,8 @@ fn build_ui(app: &adw::Application) {
         stream.lock().unwrap().replace(device.build_input_stream(
             &config,
             move |data: &[f32], _| {
-                // todo: deinterleave data
+                // todo: I can switch to something like this if it'll improve performance:
+                // https://stackoverflow.com/questions/54185667/how-to-safely-reinterpret-vecf64-as-vecnum-complexcomplexf64-with-half-t
                 let deinterleaved = ndarray::Array::from_iter(data.iter().copied())
                     .into_shape((data.len() / config.channels as usize, config.channels as usize))
                     .expect("Failed to deinterleave stream").into();

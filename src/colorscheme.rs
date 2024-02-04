@@ -11,7 +11,7 @@ use gtk::{
     subclass::prelude::*,
 };
 use colorous::*;
-use crate::frequency_sample::{StereoFrequencySample, StereoMagnitude};
+use crate::fourier::frequency_sample::StereoMagnitude;
 
 const MIN_DB: f32 = -70.0;
 const MAX_DB: f32 = 0.0;

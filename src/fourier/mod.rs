@@ -6,7 +6,9 @@ use cpal::SampleRate;
 use async_channel::Sender;
 use ndarray::Axis;
 use num_traits::FloatConst;
-use crate::frequency_sample::StereoFrequencySample;
+
+use frequency_sample::StereoFrequencySample;
+pub mod frequency_sample;
 
 const FFT_WINDOW_SIZE: usize = 2048;
 const PADDED_FFT_WINDOW_SIZE: usize = FFT_WINDOW_SIZE * 2;

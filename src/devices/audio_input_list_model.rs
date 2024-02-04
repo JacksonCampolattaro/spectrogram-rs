@@ -5,7 +5,7 @@ use gtk::{
     gio::ListModel,
 };
 
-use crate::audio_device::AudioDevice;
+use crate::devices::audio_device::AudioDevice;
 
 
 glib::wrapper! {
