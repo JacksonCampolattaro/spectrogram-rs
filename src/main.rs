@@ -9,7 +9,7 @@ use cpal::traits::{DeviceTrait, StreamTrait};
 use gtk::{DropDown, glib, Align, RevealerTransitionType, Overlay};
 use gtk::prelude::*;
 
-use fourier::FourierTransform;
+use fourier::transform::*;
 use widgets::spectrogram::Spectrogram;
 use devices::audio_device::AudioDevice;
 use devices::audio_input_list_model::AudioInputListModel;
@@ -47,7 +47,7 @@ fn build_ui(app: &adw::Application) {
     let stream = Mutex::new(None::<cpal::Stream>);
     let start_stream = move |device: &cpal::Device| {
         let config: cpal::StreamConfig = device.default_input_config().unwrap().into();
-        let mut fft = FourierTransform::new(sender.clone(), config.channels as usize);
+        let mut fft = ComplexStereoTransform::new(sender.clone());
         println!(
             "Listening to device: {} ({}Hz, {}ch)",
             device.name().unwrap(),
@@ -63,12 +63,19 @@ fn build_ui(app: &adw::Application) {
         stream.lock().unwrap().replace(device.build_input_stream(
             &config,
             move |data: &[f32], _| {
-                // todo: I can switch to something like this if it'll improve performance:
-                // https://stackoverflow.com/questions/54185667/how-to-safely-reinterpret-vecf64-as-vecnum-complexcomplexf64-with-half-t
-                let deinterleaved = ndarray::Array::from_iter(data.iter().copied())
-                    .into_shape((data.len() / config.channels as usize, config.channels as usize))
-                    .expect("Failed to deinterleave stream").into();
-                fft.apply(&deinterleaved, config.sample_rate);
+
+                if config.channels == 1 {
+                    fft.apply(mono_to_stereo(data).as_slice(), config.sample_rate);
+                } else if config.channels == 2 {
+                    fft.apply(deinterleave_stereo(data), config.sample_rate);
+                } else {
+                    eprintln!("{}-channel input not supported!", config.channels);
+                }
+
+                // let deinterleaved = ndarray::Array::from_iter(data.iter().copied())
+                //     .into_shape((data.len() / config.channels as usize, config.channels as usize))
+                //     .expect("Failed to deinterleave stream").into();
+                // fft.apply(&deinterleaved, config.sample_rate);
             },
             err_fn,
             None,

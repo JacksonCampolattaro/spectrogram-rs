@@ -25,6 +25,14 @@ pub struct StereoFrequencySample {
 }
 
 impl StereoFrequencySample {
+    pub fn new<I>(magnitudes: I, sample_rate: SampleRate) -> Self
+        where I: IntoIterator<Item=StereoMagnitude> {
+        StereoFrequencySample {
+            magnitudes: magnitudes.into_iter().collect(),
+            sample_rate,
+        }
+    }
+
     pub fn from_channels(left: Vec<f32>, right: Vec<f32>, sample_rate: SampleRate) -> Self {
         let magnitudes = zip(left.iter(), right.iter())
             .map(|(l, r)| StereoMagnitude::new(*l, *r))
@@ -90,6 +98,8 @@ impl FrequencySample for StereoFrequencySample {
     }
 
     fn magnitude_in(&self, frequencies: Range<Frequency>) -> StereoMagnitude {
+
+        // todo: this could be sped up by storing the magnitudes in prefix-sum form!
 
         // Determine the number of samples to take
         let indices = self.index_of(&frequencies.start)..self.index_of(&frequencies.end);
