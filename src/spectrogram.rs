@@ -23,7 +23,7 @@ use plotters::coord::{
 };
 use plotters_cairo::CairoBackend;
 
-use crate::fourier::FrequencySample;
+use crate::frequency_sample::{Frequency, FrequencySample, to_scaled_decibels};
 use crate::log_scaling::*;
 use crate::colorscheme::*;
 
@@ -37,15 +37,15 @@ impl Spectrogram {
         Object::builder().build()
     }
 
-    pub fn push_frequencies(&self, frequency_sample: FrequencySample) {
-        self.push_frequency_block(&[frequency_sample]);
-    }
-
-    pub fn push_frequency_block(&self, frequency_samples: &[FrequencySample]) {
+    pub fn push_frequency_samples<I>(&self, samples: I)
+        where I: IntoIterator,
+              I::IntoIter: ExactSizeIterator,
+              I::Item: FrequencySample {
         let self_ = imp::Spectrogram::from_obj(self);
         let buffer = &self_.buffer;
+        let samples = samples.into_iter();
 
-        let num_samples = frequency_samples.len() as i32;
+        let num_samples = samples.len();
 
         let cartesian_range: Cartesian2d<RangedCoordf32, LogCoordf64> = Cartesian2d::new(
             self_.x_range.clone(),
@@ -55,29 +55,27 @@ impl Spectrogram {
 
         // Shift the buffer over by n pixels
         buffer.copy_area(
-            num_samples, 0,
-            buffer.width() - num_samples, buffer.height(),
+            num_samples as i32, 0,
+            buffer.width() - num_samples as i32, buffer.height(),
             buffer,
             0, 0,
         );
 
-        let min_db = -70.0;
-        let max_db = 32.0;
-
-        // Write values to the right column
-        for (px, frequency_sample) in frequency_samples.iter().enumerate() {
+        for (px, sample) in samples.enumerate() {
             for py in 0..buffer.height() {
                 let (_, f0) = cartesian_range.reverse_translate((buffer.width() - 1, py)).unwrap();
                 let (_, f1) = cartesian_range.reverse_translate((buffer.width() - 1, py + 1)).unwrap();
 
-                let magnitude = frequency_sample.mean_magnitude_of_frequency_range(f0 as f32, f1 as f32);
-                let magnitude = 20.0 * (magnitude + 1e-7).log10();
-                let magnitude = ((magnitude - min_db) / (max_db - min_db)) as f64;
+                let frequency_range = (f0 as Frequency)..(f1 as Frequency);
 
-                let px = (buffer.width() - num_samples) + px as i32;
+                let magnitude = sample.magnitude_in(frequency_range);
+                let magnitude = to_scaled_decibels(&magnitude);
+
+                let px = (buffer.width() - num_samples as i32) + px as i32;
                 let py = buffer.height() - py - 1;
 
-                let color = self_.palette.borrow().get_gradient().eval_continuous(magnitude);
+                let color = self_.palette.borrow().color_for(magnitude);
+                // let color = self_.palette.borrow().get_gradient().eval_continuous(magnitude[0] as f64);
                 buffer.put_pixel(
                     px as u32,
                     py as u32,
@@ -119,15 +117,15 @@ mod imp {
                 8,
                 2048, 1024,
             ).unwrap();
-            let palette: RefCell<ColorScheme> = ColorScheme::new(colorous::MAGMA, "magma").into();
-            let color = palette.borrow().get_gradient().eval_continuous(0.0);
+            let palette: RefCell<ColorScheme> = ColorScheme::new_mono(colorous::MAGMA, "magma").into();
+            let color = palette.borrow().background();
             let color = u32::from_be_bytes([color.r, color.g, color.b, 255]);
             buffer.fill(color);
             Self {
                 x_range: (-10.0..0.0).into(),
-                y_range: (32.0..22050.0).reversible_log_scale().base(2.0).zero_point(0.0).into(),
+                y_range: (32.0..22030.0).reversible_log_scale().base(2.0).zero_point(0.0).into(),
                 palette,
-                buffer
+                buffer,
             }
         }
     }
@@ -154,9 +152,9 @@ mod imp {
             snapshot: &gtk::Snapshot,
             bounds: &gtk::graphene::Rect,
         ) -> Result<(), Box<dyn Error>> {
-            let background_color = self.palette.borrow().get_gradient().eval_continuous(0.0);
+            let background_color = self.palette.borrow().background();
             let background_color = RGBColor(background_color.r, background_color.g, background_color.b);
-            let foreground_color = self.palette.borrow().get_gradient().eval_continuous(1.0);
+            let foreground_color = self.palette.borrow().foreground();
             let foreground_color = RGBColor(foreground_color.r, foreground_color.g, foreground_color.b);
 
             // Start by drawing the plot bounds

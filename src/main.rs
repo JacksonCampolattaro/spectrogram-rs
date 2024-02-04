@@ -5,6 +5,7 @@ use adw::glib::clone;
 use adw::glib::ControlFlow::Continue;
 use adw::prelude::AdwApplicationExt;
 use async_channel;
+use async_channel::Receiver;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use gtk::{DropDown, glib, Align, RevealerTransitionType, Overlay};
 use gtk::prelude::*;
@@ -23,6 +24,7 @@ mod log_scaling;
 mod audio_input_list_model;
 mod audio_device;
 mod colorscheme;
+mod frequency_sample;
 
 const APP_ID: &str = "nl.campolattaro.jackson.spectrogram";
 
@@ -166,7 +168,7 @@ fn build_ui(app: &adw::Application) {
         }
 
         // Push the entire block at once
-        visualizer.push_frequency_block(&samples);
+        visualizer.push_frequency_samples(samples);
         Continue
     });
 

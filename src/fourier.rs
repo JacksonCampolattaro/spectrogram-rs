@@ -3,76 +3,24 @@ use fftw::plan::{R2CPlan, R2CPlan32};
 use fftw::array::AlignedVec;
 
 use cpal::SampleRate;
-use async_channel::{Sender};
-use iter_num_tools::lin_space;
+use async_channel::Sender;
 use ndarray::Axis;
 use num_traits::FloatConst;
+use crate::frequency_sample::StereoFrequencySample;
 
 const FFT_WINDOW_SIZE: usize = 2048;
 const PADDED_FFT_WINDOW_SIZE: usize = FFT_WINDOW_SIZE * 2;
 const FFT_WINDOW_STRIDE: usize = 128;
 const NUM_FREQUENCIES: usize = 1 + (PADDED_FFT_WINDOW_SIZE / 2);
 
-pub struct FrequencySample {
-    pub magnitudes: Vec<f32>,
-    pub sample_rate: SampleRate,
-}
-
-impl FrequencySample {
-    pub fn period(&self) -> f32 {
-        2.0 * self.magnitudes.len() as f32 / self.sample_rate.0 as f32
-    }
-
-    pub fn index_of_frequency(&self, frequency: f32) -> f32 {
-        frequency * self.period()
-    }
-
-    pub fn frequency_of_index(&self, index: f32) -> f32 {
-        index / self.period()
-    }
-
-    pub fn magnitude_of_frequency(&self, frequency: f32) -> f32 {
-        let index = frequency * self.period();
-        // Interpolation is done in frequency space, to account for log scaling
-        let (floor, ceil) = (self.next_lower_frequency(frequency), self.next_higher_frequency(frequency));
-        let offset = (frequency - floor) / (ceil - floor);
-        // cosine interpolation for a smoother-looking plot
-        let offset = (1.0 - f32::cos(offset * f32::PI())) / 2.0;
-        (self.magnitudes[index.floor() as usize] * (1.0 - offset)) + (self.magnitudes[index.ceil() as usize] * offset)
-    }
-
-    fn next_lower_frequency(&self, frequency: f32) -> f32 {
-        (frequency * self.period()).floor() / self.period()
-    }
-
-    fn next_higher_frequency(&self, frequency: f32) -> f32 {
-        (frequency * self.period()).ceil() / self.period()
-    }
-
-    pub fn mean_magnitude_of_frequency_range(&self, start: f32, end: f32) -> f32 {
-        assert!(start < end);
-        let (start_index, end_index) = (self.index_of_frequency(start), self.index_of_frequency(end));
-        let num_samples = ((end_index - start_index).floor() as usize).max(1);
-        let sample_frequencies = lin_space(start..end, num_samples);
-        let mean = sample_frequencies
-            .map(|f| { self.magnitude_of_frequency(f) })
-            .sum::<f32>() / num_samples as f32;
-        // Note: this ensures higher frequencies are well represented, but it might not be energetically accurate
-        mean * (end - start)
-    }
-    pub fn max_frequency(&self) -> f32 {
-        (self.sample_rate.0 / 2) as f32
-    }
-}
-
 pub struct FourierTransform {
     plan: R2CPlan32,
     sample_buffers: Vec<Vec<f32>>,
-    sender: Sender<FrequencySample>,
+    sender: Sender<StereoFrequencySample>,
 }
 
 impl FourierTransform {
-    pub fn new(sender: Sender<FrequencySample>, channels: usize) -> Self {
+    pub fn new(sender: Sender<StereoFrequencySample>, channels: usize) -> Self {
         let sample_buffers = (0..channels)
             .map(|_| { vec![0.0; FFT_WINDOW_SIZE] })
             .collect();
@@ -98,6 +46,9 @@ impl FourierTransform {
                 buffer.rotate_left(FFT_WINDOW_STRIDE);
                 buffer[FFT_WINDOW_SIZE - FFT_WINDOW_STRIDE..].copy_from_slice(stream.as_standard_layout().as_slice().unwrap());
             }
+
+            // todo: Maybe I should use something like this for stereo signals:
+            // https://web.archive.org/web/20180312110051/http://www.engineeringproductivitytools.com/stuff/T0001/PT10.HTM
 
             // Apply the fft on the buffer
             // Writing this as a pipeline will make it easy to parallelize in the future
@@ -140,9 +91,18 @@ impl FourierTransform {
                 .collect();
 
             // todo: send more than one channel to visualization
-            let frequency_sample = FrequencySample {
-                magnitudes: magnitudes[0].clone(),
-                sample_rate,
+
+            // let frequency_sample = StereoFrequencySample {
+            //     magnitudes: magnitudes[0].clone(),
+            //     sample_rate,
+            // };
+            let frequency_sample = if magnitudes.len() == 1 {
+                StereoFrequencySample::from_mono(magnitudes[0].clone(), sample_rate)
+            } else {
+                StereoFrequencySample::from_channels(
+                    magnitudes[0].clone(), magnitudes[1].clone(),
+                    sample_rate,
+                )
             };
 
             // We don't care whether the sample actually goes through, so no .expect() here.

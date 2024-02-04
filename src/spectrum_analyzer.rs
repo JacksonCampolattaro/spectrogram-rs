@@ -5,15 +5,14 @@ use gtk::{
     prelude::*,
     subclass::prelude::*,
     LevelBar,
-    Orientation
+    Orientation,
 };
 use glib::{
     Object,
 };
 
 use num_traits::{Pow};
-
-use crate::fourier::FrequencySample;
+use crate::frequency_sample::{Frequency, FrequencySample};
 
 fn log_space(start: f32, end: f32, n: usize, base: f32) -> impl Iterator<Item=f32> + Clone {
     // println!("{}, {}", start, end);
@@ -43,7 +42,7 @@ impl SpectrumAnalyzer {
         Object::builder().build()
     }
 
-    pub fn push_frequencies(&mut self, frequency_sample: FrequencySample) {
+    pub fn push_frequencies(&mut self, frequency_sample: &dyn FrequencySample) {
         // let min = magnitudes.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap().clone();
         // let max = magnitudes.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap().clone();
         let min = -70.0;
@@ -52,14 +51,15 @@ impl SpectrumAnalyzer {
 
         let frequencies = log_space(
             32.0,
-            frequency_sample.max_frequency().max(22050.0),
+            frequency_sample.frequencies().end.max(22050.0),
             self_.level_bars.len() + 1,
             10.0,
         );
         let frequency_ranges = zip(frequencies.clone(), frequencies.skip(1));
 
         for (bar, (frequency_start, frequency_end)) in self_.level_bars.iter().zip(frequency_ranges) {
-            let magnitude = frequency_sample.mean_magnitude_of_frequency_range(frequency_start, frequency_end);
+            let magnitude = frequency_sample.magnitude_in(frequency_start as Frequency..frequency_end as Frequency);
+            let magnitude = magnitude[0];
             let magnitude = 10.0 * (magnitude + 1e-7).log10();
             let magnitude = ((magnitude - min) / (max - min)) as f64;
 
