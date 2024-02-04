@@ -105,11 +105,11 @@ pub fn default_color_schemes() -> ListStore {
         .item_type(ColorScheme::static_type())
         .build();
     list.extend_from_slice(&[
-        ColorScheme::new_stereo(SPECTRAL, Color { r: 0, g: 0, b: 0 }, "Spectral (Stereo)"),
+        ColorScheme::new_stereo(RED_YELLOW_BLUE, Color { r: 0, g: 0, b: 0 }, "Blue-Yellow-Red (Stereo)"),
         ColorScheme::new_mono(MAGMA, "Magma"),
         ColorScheme::new_mono(VIRIDIS, "Viridis"),
         ColorScheme::new_stereo(RED_BLUE, Color { r: 0, g: 0, b: 0 }, "Blue-Red (Stereo)"),
-        ColorScheme::new_stereo(RED_YELLOW_BLUE, Color { r: 0, g: 0, b: 0 }, "Blue-Yellow-Red (Stereo)"),
+        ColorScheme::new_stereo(SPECTRAL, Color { r: 0, g: 0, b: 0 }, "Spectral (Stereo)"),
         ColorScheme::new_stereo(RED_YELLOW_GREEN, Color { r: 0, g: 0, b: 0 }, "Green-Yellow-Red (Stereo)"),
         ColorScheme::new_stereo(PINK_GREEN, Color { r: 0, g: 0, b: 0 }, "Green-Pink (Stereo)"),
         ColorScheme::new_stereo(PURPLE_ORANGE, Color { r: 0, g: 0, b: 0 }, "Orange-Purple (Stereo)"),

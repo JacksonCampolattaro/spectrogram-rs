@@ -40,19 +40,7 @@ impl InterpolatedFrequencySample {
     }
 
     fn magnitude_at(&self, frequency: &Frequency) -> StereoMagnitude {
-        let cell_indices = self.cell_indices_of(frequency);
-
-        // Interpolation is done in frequency space, to account for log scaling
-        let cell_frequencies = self.frequencies_of(&cell_indices);
-        let offset = ((*frequency - cell_frequencies.start) / (cell_frequencies.end - cell_frequencies.start)) as f32;
-
-        // cosine interpolation for a smoother-looking plot
-        // todo: cubic or hermite interpolation could produce nicer results!
-        let offset = (1.0 - f32::cos(offset * f32::PI())) / 2.0;
-
-        let low = self.magnitudes[cell_indices.start];
-        let high = self.magnitudes[cell_indices.end];
-        (low * (1.0 - offset)) + (high * offset)
+        cubic_interpolate(self.magnitudes.as_slice(), self.index_of(&frequency))
     }
 }
 
@@ -82,4 +70,30 @@ impl FrequencySample for InterpolatedFrequencySample {
         let mean_magnitude = sample_magnitudes.sum::<StereoMagnitude>() / num_samples as f32;
         mean_magnitude
     }
+}
+
+fn cosine_interpolate(data: &[StereoMagnitude], index: f32) -> StereoMagnitude {
+    let low = index.floor() as usize;
+    let high = (index.ceil() as usize).clamp(low + 1, data.len() - 1);
+    let offset = index - low as f32;
+    let offset = (1.0 - f32::cos(offset * f32::PI())) / 2.0;
+    (data[low] * (1.0 - offset)) + (data[high] * offset)
+}
+
+fn cubic_interpolate(data: &[StereoMagnitude], index: f32) -> StereoMagnitude {
+    // Adapted from: https://paulbourke.net/miscellaneous/interpolation/
+    let mu = index - index.floor();
+    let x0 = (index.floor() as usize - 1).max(0);
+    let x1 = index.floor() as usize;
+    let x2 = (x1 + 1).min(data.len() - 1);
+    let x3 = (x1 + 2).min(data.len() - 1);
+    let (y0, y1, y2, y3) = (data[x0], data[x1], data[x2], data[x3]);
+
+    let mu2 = mu * mu;
+    let a0 = y3 - y2 - y0 + y1;
+    let a1 = y0 - y1 - a0;
+    let a2 = y2 - y0;
+    let a3 = y1;
+
+    (a0 * mu * mu2) + (a1 * mu2) + (a2 * mu + a3)
 }

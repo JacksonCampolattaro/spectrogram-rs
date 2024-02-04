@@ -8,7 +8,6 @@ use itertools::Itertools;
 use num_traits::{FloatConst, Zero};
 use crate::fourier::{FFT_WINDOW_SIZE, FFT_WINDOW_STRIDE, NUM_FREQUENCIES, PADDED_FFT_WINDOW_SIZE, StereoMagnitude};
 use crate::fourier::interpolated_frequency_sample::{InterpolatedFrequencySample};
-use crate::fourier::fast_frequency_sample::{FastFrequencySample};
 
 
 pub struct ComplexStereoTransform {

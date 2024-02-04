@@ -27,6 +27,9 @@ use crate::fourier::{FrequencySample, Frequency};
 use crate::log_scaling::*;
 use crate::colorscheme::*;
 
+const TEXTURE_WIDTH: i32 = 2048;
+const TEXTURE_HEIGHT: i32 = 1024;
+
 glib::wrapper! {
     pub struct Spectrogram(ObjectSubclass<imp::Spectrogram>)
         @extends gtk::Widget;
@@ -116,7 +119,7 @@ mod imp {
                 Colorspace::Rgb,
                 true,
                 8,
-                2048, 1024,
+                TEXTURE_WIDTH, TEXTURE_HEIGHT,
             ).unwrap();
             let palette: RefCell<ColorScheme> = ColorScheme::new_mono(colorous::MAGMA, "magma").into();
             let color = palette.borrow().background();

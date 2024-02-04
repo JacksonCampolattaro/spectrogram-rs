@@ -1,31 +1,15 @@
-use std::ops::{Add, Mul, Range, Sub, SubAssign};
-use std::convert::TryInto;
-use std::fmt::Debug;
+use std::ops::Range;
 use cpal::SampleRate;
-use num_traits::{FloatConst, Num, Zero};
+use num_traits::Zero;
 use crate::fourier::{Frequency, FrequencySample, Period, StereoMagnitude};
 
-// pub fn cubic_interpolate(y: &[StereoMagnitude], mu: f32) -> StereoMagnitude {
-//     let mu2 = mu * mu;
-//
-//     // This handles upper end safely (<4 samples)
-//     let y0 = y[0];
-//     let y1 = y.get(1).unwrap_or(&y0);
-//     let y2 = y.get(2).unwrap_or(&y1);
-//     let y3 = y.get(3).unwrap_or(&y2);
-//
-//     let a0 = y3 - y2 - y0 + y1;
-//     let a1 = y0 - y1 - a0;
-//     let a2 = y2 - y0;
-//     let a3 = y1;
-//     return (a0 * mu * mu2 + a1 * mu2 + a2 * mu + a3);
-// }
-
+#[allow(dead_code)] // not currently in use, but it does provide a small performance improvement
 pub struct FastFrequencySample {
     pub prefix_sum_of_magnitudes: Vec<StereoMagnitude>,
     pub sample_rate: SampleRate,
 }
 
+#[allow(dead_code)]
 impl FastFrequencySample {
     pub fn new<I>(magnitudes: I, sample_rate: SampleRate) -> Self
         where I: IntoIterator<Item=StereoMagnitude> {
