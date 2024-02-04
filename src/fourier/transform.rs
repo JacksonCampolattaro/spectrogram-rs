@@ -6,18 +6,19 @@ use fftw::types::{c32, Sign};
 use fftw::plan::{C2CPlan, C2CPlan32};
 use itertools::Itertools;
 use num_traits::{FloatConst, Zero};
-use crate::fourier::{FFT_WINDOW_SIZE, FFT_WINDOW_STRIDE, NUM_FREQUENCIES, PADDED_FFT_WINDOW_SIZE};
-use crate::fourier::frequency_sample::{StereoFrequencySample, StereoMagnitude};
+use crate::fourier::{FFT_WINDOW_SIZE, FFT_WINDOW_STRIDE, NUM_FREQUENCIES, PADDED_FFT_WINDOW_SIZE, StereoMagnitude};
+use crate::fourier::interpolated_frequency_sample::{InterpolatedFrequencySample};
+use crate::fourier::fast_frequency_sample::{FastFrequencySample};
 
 
 pub struct ComplexStereoTransform {
     plan: C2CPlan32,
     buffer: Vec<c32>,
-    sender: Sender<StereoFrequencySample>,
+    sender: Sender<InterpolatedFrequencySample>,
 }
 
 impl ComplexStereoTransform {
-    pub fn new(sender: Sender<StereoFrequencySample>) -> Self {
+    pub fn new(sender: Sender<InterpolatedFrequencySample>) -> Self {
         let plan = C2CPlan32::aligned(
             &[PADDED_FFT_WINDOW_SIZE],
             Sign::Forward,
@@ -37,7 +38,7 @@ impl ComplexStereoTransform {
 
         // Process the input stream in chunks
         for chunk in samples.chunks_exact(FFT_WINDOW_STRIDE) {
-            let start_time = std::time::Instant::now();
+            //let start_time = std::time::Instant::now();
 
             // Fill the buffer with new data
             self.buffer.rotate_left(FFT_WINDOW_STRIDE);
@@ -79,13 +80,12 @@ impl ComplexStereoTransform {
                 .map(|m| m * scale);
 
             // Send the sample to be displayed
-            let frequency_sample = StereoFrequencySample::new(frequencies, sample_rate);
-            println!("FFT time: {:.2?}", start_time.elapsed());
+            let frequency_sample = InterpolatedFrequencySample::new(frequencies, sample_rate);
+            //println!("FFT time: {:.2?}", start_time.elapsed());
             // We don't care whether the sample actually goes through, so no .expect() here.
             // (dropping data is best, since we want to keep latency low)
             self.sender.try_send(frequency_sample).ok();
         }
-
     }
 }
 

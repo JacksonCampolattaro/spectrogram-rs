@@ -23,7 +23,7 @@ use plotters::coord::{
 };
 use plotters_cairo::CairoBackend;
 
-use crate::fourier::frequency_sample::{Frequency, FrequencySample};
+use crate::fourier::{FrequencySample, Frequency};
 use crate::log_scaling::*;
 use crate::colorscheme::*;
 
@@ -41,7 +41,7 @@ impl Spectrogram {
         where I: IntoIterator,
               I::IntoIter: ExactSizeIterator,
               I::Item: FrequencySample {
-        let start_time = std::time::Instant::now();
+        //let start_time = std::time::Instant::now();
         let self_ = imp::Spectrogram::from_obj(self);
         let buffer = &self_.buffer;
         let samples = samples.into_iter();
@@ -88,7 +88,7 @@ impl Spectrogram {
         }
 
         self.queue_draw();
-        println!("Raster time: {:.2?}", start_time.elapsed());
+        // println!("Raster time: {:.2?}", start_time.elapsed());
     }
 }
 

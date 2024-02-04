@@ -12,7 +12,7 @@ use glib::{
 };
 
 use num_traits::{Pow};
-use crate::fourier::frequency_sample::{Frequency, FrequencySample};
+use crate::fourier::{Frequency, FrequencySample};
 // use crate::fourier::{Frequency, FrequencySample}
 // use crate::frequency_sample::{Frequency, FrequencySample};
 

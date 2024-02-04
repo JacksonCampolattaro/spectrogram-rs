@@ -1,54 +1,21 @@
-use std::iter::zip;
 use std::ops::Range;
 use cpal::SampleRate;
 use iter_num_tools::lin_space;
 use num_traits::FloatConst;
-use fftw::types::c32;
 
-pub type StereoMagnitude = c32;
-pub type Period = f32;
-pub type Frequency = f32;
-
-pub trait FrequencySample {
-    fn period(&self) -> Period;
-    fn frequencies(&self) -> Range<Frequency>;
-    fn magnitude_at(&self, frequency: &Frequency) -> StereoMagnitude;
-    fn magnitude_in(&self, frequencies: Range<Frequency>) -> StereoMagnitude;
-    // todo: this may be useful if we want precise timing information in the future
-    //fn instant(&self) -> StreamInstant;
-}
+use crate::fourier::{Frequency, FrequencySample, Period, StereoMagnitude};
 
 
-pub struct StereoFrequencySample {
+pub struct InterpolatedFrequencySample {
     pub magnitudes: Vec<StereoMagnitude>,
     pub sample_rate: SampleRate,
 }
 
-impl StereoFrequencySample {
+impl InterpolatedFrequencySample {
     pub fn new<I>(magnitudes: I, sample_rate: SampleRate) -> Self
         where I: IntoIterator<Item=StereoMagnitude> {
-        StereoFrequencySample {
+        InterpolatedFrequencySample {
             magnitudes: magnitudes.into_iter().collect(),
-            sample_rate,
-        }
-    }
-
-    pub fn from_channels(left: Vec<f32>, right: Vec<f32>, sample_rate: SampleRate) -> Self {
-        let magnitudes = zip(left.iter(), right.iter())
-            .map(|(l, r)| StereoMagnitude::new(*l, *r))
-            .collect();
-        StereoFrequencySample {
-            magnitudes,
-            sample_rate,
-        }
-    }
-
-    pub fn from_mono(magnitudes: Vec<f32>, sample_rate: SampleRate) -> Self {
-        let magnitudes = magnitudes.iter()
-            .map(|m| StereoMagnitude::new(*m, *m))
-            .collect();
-        StereoFrequencySample {
-            magnitudes,
             sample_rate,
         }
     }
@@ -71,16 +38,6 @@ impl StereoFrequencySample {
     fn frequencies_of(&self, indices: &Range<usize>) -> Range<Frequency> {
         self.frequency_of(indices.start as f32)..self.frequency_of(indices.end as f32)
     }
-}
-
-impl FrequencySample for StereoFrequencySample {
-    fn period(&self) -> Period {
-        2.0 * self.magnitudes.len() as f32 / self.sample_rate.0 as f32
-    }
-
-    fn frequencies(&self) -> Range<Frequency> {
-        0.0..(self.sample_rate.0 as Frequency / 2.0)
-    }
 
     fn magnitude_at(&self, frequency: &Frequency) -> StereoMagnitude {
         let cell_indices = self.cell_indices_of(frequency);
@@ -90,11 +47,22 @@ impl FrequencySample for StereoFrequencySample {
         let offset = ((*frequency - cell_frequencies.start) / (cell_frequencies.end - cell_frequencies.start)) as f32;
 
         // cosine interpolation for a smoother-looking plot
+        // todo: cubic or hermite interpolation could produce nicer results!
         let offset = (1.0 - f32::cos(offset * f32::PI())) / 2.0;
 
         let low = self.magnitudes[cell_indices.start];
         let high = self.magnitudes[cell_indices.end];
         (low * (1.0 - offset)) + (high * offset)
+    }
+}
+
+impl FrequencySample for InterpolatedFrequencySample {
+    fn period(&self) -> Period {
+        2.0 * self.magnitudes.len() as f32 / self.sample_rate.0 as f32
+    }
+
+    fn frequencies(&self) -> Range<Frequency> {
+        0.0..(self.sample_rate.0 as Frequency / 2.0)
     }
 
     fn magnitude_in(&self, frequencies: Range<Frequency>) -> StereoMagnitude {
