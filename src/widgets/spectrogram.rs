@@ -75,15 +75,14 @@ impl Spectrogram {
                 let px = (buffer.width() - num_samples as i32) + px as i32;
                 let py = buffer.height() - py - 1;
 
-                let color = self_.palette.borrow().color_for(magnitude);
-                // let color = self_.palette.borrow().get_gradient().eval_continuous(magnitude[0] as f64);
+                let (color, alpha) = self_.palette.borrow().color_for(magnitude);
                 buffer.put_pixel(
                     px as u32,
                     py as u32,
                     color.r,
                     color.g,
                     color.b,
-                    255,
+                    (alpha * 255.0) as u8,
                 );
             }
         }
@@ -115,7 +114,7 @@ mod imp {
         fn new() -> Self {
             let buffer = Pixbuf::new(
                 Colorspace::Rgb,
-                false,
+                true,
                 8,
                 2048, 1024,
             ).unwrap();

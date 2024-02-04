@@ -1,5 +1,4 @@
 use std::cell::{Cell, RefCell};
-use std::iter::zip;
 use gtk::{
     glib,
     glib::{
@@ -52,7 +51,7 @@ impl ColorScheme {
         }
     }
 
-    pub fn color_for(&self, magnitude: StereoMagnitude) -> Color {
+    pub fn color_for(&self, magnitude: StereoMagnitude) -> (Color, f32) {
         let imp = imp::ColorScheme::from_obj(self);
         let background = imp.background.get();
 
@@ -61,24 +60,11 @@ impl ColorScheme {
         let magnitude_bounded = (magnitude_db - MIN_DB) / (MAX_DB - MIN_DB);
 
         if background.is_none() {
-            imp.gradient.get().eval_continuous(magnitude_bounded as f64)
+            (imp.gradient.get().eval_continuous(magnitude_bounded as f64), 1.0)
         } else {
             // If a background is provided, the foreground is based on a diverging gradient
-            let distribution = magnitude.re as f64 / magnitude.l1_norm() as f64;
-            //println!("{}, {} -> {}", magnitude.re, magnitude.im, distribution);
-            let foreground = imp.gradient.get().eval_continuous(distribution);
-
-            // We need to mix the foreground & background based on the mean magnitude
-            let mut mixed = zip(foreground.as_array(), background.unwrap().as_array())
-                .map(|(f, b)| {
-                    ((f as f32 * magnitude_bounded) + (b as f32 * (1.0 - magnitude_bounded))) as u8
-                });
-            // todo
-            Color {
-                r: mixed.next().unwrap(),
-                g: mixed.next().unwrap(),
-                b: mixed.next().unwrap(),
-            }
+            let left_right_distribution = magnitude.re as f64 / magnitude.l1_norm() as f64;
+            (imp.gradient.get().eval_continuous(left_right_distribution), magnitude_bounded)
         }
     }
 }
@@ -119,9 +105,14 @@ pub fn default_color_schemes() -> ListStore {
         .item_type(ColorScheme::static_type())
         .build();
     list.extend_from_slice(&[
+        ColorScheme::new_stereo(SPECTRAL, Color { r: 0, g: 0, b: 0 }, "Spectral (Stereo)"),
         ColorScheme::new_mono(MAGMA, "Magma"),
         ColorScheme::new_mono(VIRIDIS, "Viridis"),
-        ColorScheme::new_stereo(RED_BLUE, Color { r: 0, g: 0, b: 0 }, "Red-Blue"),
+        ColorScheme::new_stereo(RED_BLUE, Color { r: 0, g: 0, b: 0 }, "Blue-Red (Stereo)"),
+        ColorScheme::new_stereo(RED_YELLOW_BLUE, Color { r: 0, g: 0, b: 0 }, "Blue-Yellow-Red (Stereo)"),
+        ColorScheme::new_stereo(RED_YELLOW_GREEN, Color { r: 0, g: 0, b: 0 }, "Green-Yellow-Red (Stereo)"),
+        ColorScheme::new_stereo(PINK_GREEN, Color { r: 0, g: 0, b: 0 }, "Green-Pink (Stereo)"),
+        ColorScheme::new_stereo(PURPLE_ORANGE, Color { r: 0, g: 0, b: 0 }, "Orange-Purple (Stereo)"),
         ColorScheme::new_mono(INFERNO, "Inferno"),
         ColorScheme::new_mono(PLASMA, "Plasma"),
         ColorScheme::new_mono(CIVIDIS, "Cividis"),
