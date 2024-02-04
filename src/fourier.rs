@@ -38,6 +38,7 @@ impl FourierTransform {
     }
 
     pub fn apply(&mut self, samples: &ndarray::Array2<f32>, sample_rate: SampleRate) {
+        let start_time = std::time::Instant::now();
         // todo: I should use a channel/deque to accumulate samples before processing!
         let channels = samples.shape()[1];
         for chunk in samples.exact_chunks((FFT_WINDOW_STRIDE, channels)) {
@@ -82,20 +83,16 @@ impl FourierTransform {
                 .map(|frequency_buffer| {
                     let scale = 2.0 / FFT_WINDOW_SIZE as f32;
                     frequency_buffer.iter()
-                        .map(|c| c.norm_sqr())
+                        .map(|c| c.norm())
                         .map(|c| c * scale)
                         // temporary measure, because we're only showing one channel for now
-                        .map(|c| c * channels as f32)
+                        // .map(|c| c * channels as f32)
                         .collect()
                 })
                 .collect();
 
             // todo: send more than one channel to visualization
 
-            // let frequency_sample = StereoFrequencySample {
-            //     magnitudes: magnitudes[0].clone(),
-            //     sample_rate,
-            // };
             let frequency_sample = if magnitudes.len() == 1 {
                 StereoFrequencySample::from_mono(magnitudes[0].clone(), sample_rate)
             } else {
@@ -104,6 +101,8 @@ impl FourierTransform {
                     sample_rate,
                 )
             };
+
+            println!("FFT time: {:.2?}", start_time.elapsed());
 
             // We don't care whether the sample actually goes through, so no .expect() here.
             self.sender.try_send(frequency_sample).ok();

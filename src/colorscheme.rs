@@ -13,6 +13,9 @@ use gtk::{
 use colorous::*;
 use crate::frequency_sample::{StereoFrequencySample, StereoMagnitude};
 
+const MIN_DB: f32 = -70.0;
+const MAX_DB: f32 = 0.0;
+
 glib::wrapper! {
     pub struct ColorScheme(ObjectSubclass<imp::ColorScheme>);
 }
@@ -53,19 +56,22 @@ impl ColorScheme {
         let imp = imp::ColorScheme::from_obj(self);
         let background = imp.background.get();
 
-        let mean_magnitude = magnitude.iter().sum::<f32>() as f64 / magnitude.len() as f64;
+        let total_magnitude = magnitude.norm_sqr();
+        let magnitude_db = 10.0 * (total_magnitude + 1e-7).log10();
+        let magnitude_bounded = (magnitude_db - MIN_DB) / (MAX_DB - MIN_DB);
 
         if background.is_none() {
-            imp.gradient.get().eval_continuous(mean_magnitude)
+            imp.gradient.get().eval_continuous(magnitude_bounded as f64)
         } else {
             // If a background is provided, the foreground is based on a diverging gradient
-            let distribution = (magnitude[0] as f64 - magnitude[1] as f64) / mean_magnitude;
-            let foreground = imp.gradient.get().eval_continuous((distribution + 1.0) / 2.0);
+            let distribution = magnitude.re as f64 / magnitude.l1_norm() as f64;
+            //println!("{}, {} -> {}", magnitude.re, magnitude.im, distribution);
+            let foreground = imp.gradient.get().eval_continuous(distribution);
 
             // We need to mix the foreground & background based on the mean magnitude
             let mut mixed = zip(foreground.as_array(), background.unwrap().as_array())
                 .map(|(f, b)| {
-                    ((f as f64 * mean_magnitude) + (b as f64 * (1.0 - mean_magnitude))) as u8
+                    ((f as f32 * magnitude_bounded) + (b as f32 * (1.0 - magnitude_bounded))) as u8
                 });
             // todo
             Color {

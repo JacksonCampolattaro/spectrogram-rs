@@ -59,7 +59,7 @@ impl SpectrumAnalyzer {
 
         for (bar, (frequency_start, frequency_end)) in self_.level_bars.iter().zip(frequency_ranges) {
             let magnitude = frequency_sample.magnitude_in(frequency_start as Frequency..frequency_end as Frequency);
-            let magnitude = magnitude[0];
+            let magnitude = magnitude.norm();
             let magnitude = 10.0 * (magnitude + 1e-7).log10();
             let magnitude = ((magnitude - min) / (max - min)) as f64;
 

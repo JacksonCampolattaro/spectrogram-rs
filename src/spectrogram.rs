@@ -23,7 +23,7 @@ use plotters::coord::{
 };
 use plotters_cairo::CairoBackend;
 
-use crate::frequency_sample::{Frequency, FrequencySample, to_scaled_decibels};
+use crate::frequency_sample::{Frequency, FrequencySample};
 use crate::log_scaling::*;
 use crate::colorscheme::*;
 
@@ -41,6 +41,7 @@ impl Spectrogram {
         where I: IntoIterator,
               I::IntoIter: ExactSizeIterator,
               I::Item: FrequencySample {
+        let start_time = std::time::Instant::now();
         let self_ = imp::Spectrogram::from_obj(self);
         let buffer = &self_.buffer;
         let samples = samples.into_iter();
@@ -69,7 +70,7 @@ impl Spectrogram {
                 let frequency_range = (f0 as Frequency)..(f1 as Frequency);
 
                 let magnitude = sample.magnitude_in(frequency_range);
-                let magnitude = to_scaled_decibels(&magnitude);
+                // let magnitude = to_scaled_decibels(&magnitude);
 
                 let px = (buffer.width() - num_samples as i32) + px as i32;
                 let py = buffer.height() - py - 1;
@@ -88,6 +89,7 @@ impl Spectrogram {
         }
 
         self.queue_draw();
+        println!("Raster time: {:.2?}", start_time.elapsed());
     }
 }
 

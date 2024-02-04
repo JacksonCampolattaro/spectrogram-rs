@@ -4,20 +4,11 @@ use std::ops::Range;
 use cpal::SampleRate;
 use iter_num_tools::lin_space;
 use num_traits::FloatConst;
+use fftw::types::c32;
 
-pub type StereoMagnitude = [f32; 2];
+pub type StereoMagnitude = c32;
 pub type Period = f32;
 pub type Frequency = f32;
-
-const MIN_DB: f32 = -70.0;
-const MAX_DB: f32 = 32.0;
-
-pub fn to_scaled_decibels(magnitude: &StereoMagnitude) -> StereoMagnitude {
-    // todo: in the future, this should be split into to_decibels & a mapping to a display scale
-    magnitude
-        .map(|m| 20.0 * (m + 1e-7).log10())
-        .map(|m| ((m - MIN_DB) / (MAX_DB - MIN_DB)))
-}
 
 pub trait FrequencySample {
     fn period(&self) -> Period;
@@ -37,7 +28,7 @@ pub struct StereoFrequencySample {
 impl StereoFrequencySample {
     pub fn from_channels(left: Vec<f32>, right: Vec<f32>, sample_rate: SampleRate) -> Self {
         let magnitudes = zip(left.iter(), right.iter())
-            .map(|(l, r)| StereoMagnitude::from([*l, *r]))
+            .map(|(l, r)| StereoMagnitude::new(*l, *r))
             .collect();
         StereoFrequencySample {
             magnitudes,
@@ -47,7 +38,7 @@ impl StereoFrequencySample {
 
     pub fn from_mono(magnitudes: Vec<f32>, sample_rate: SampleRate) -> Self {
         let magnitudes = magnitudes.iter()
-            .map(|m| StereoMagnitude::from([*m, *m]))
+            .map(|m| StereoMagnitude::new(*m, *m))
             .collect();
         StereoFrequencySample {
             magnitudes,
@@ -96,9 +87,7 @@ impl FrequencySample for StereoFrequencySample {
 
         let low = self.magnitudes[cell_indices.start];
         let high = self.magnitudes[cell_indices.end];
-        array::from_fn(|channel| {
-            (low[channel] * (1.0 - offset)) + (high[channel] * offset)
-        })
+        (low * (1.0 - offset)) + (high * offset)
     }
 
     fn magnitude_in(&self, frequencies: Range<Frequency>) -> StereoMagnitude {
@@ -113,11 +102,7 @@ impl FrequencySample for StereoFrequencySample {
             .map(|f| self.magnitude_at(&f));
 
         // todo: this could use some cleaning up, not a fan of the clone()
-        let mean_magnitude: StereoMagnitude = array::from_fn(|channel| {
-            sample_magnitudes.clone()
-                .map(|m| m[channel])
-                .sum::<f32>() / num_samples as f32
-        });
+        let mean_magnitude = sample_magnitudes.sum::<StereoMagnitude>() / num_samples as f32;
         mean_magnitude
     }
 }
