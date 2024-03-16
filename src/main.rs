@@ -1,13 +1,15 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use adw::ColorScheme;
 use adw::glib::clone;
 use adw::glib::ControlFlow::Continue;
 use adw::prelude::AdwApplicationExt;
 use async_channel;
+use cpal::{ChannelCount, SampleRate};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use gtk::{DropDown, glib, Align, RevealerTransitionType, Overlay};
 use gtk::prelude::*;
+use itertools::Itertools;
 
 use fourier::transform::*;
 use widgets::spectrogram::Spectrogram;
@@ -15,6 +17,8 @@ use devices::audio_device::AudioDevice;
 use devices::audio_input_list_model::AudioInputListModel;
 
 use crate::colorscheme::*;
+use crate::fourier::interpolated_frequency_sample::InterpolatedFrequencySample;
+use crate::fourier::StereoMagnitude;
 
 mod fourier;
 mod widgets;
@@ -41,55 +45,19 @@ fn main() -> glib::ExitCode {
 }
 
 fn build_ui(app: &adw::Application) {
-    let (sender, receiver) = async_channel::unbounded();
-    let err_fn = |err| eprintln!("An error occurred on the input audio stream: {}", err);
 
-    let stream = Mutex::new(None::<cpal::Stream>);
-    let start_stream = move |device: &cpal::Device| {
-        let config: cpal::StreamConfig = device.default_input_config().unwrap().into();
-        let mut fft = ComplexStereoTransform::new(sender.clone());
-        println!(
-            "Listening to device: {} ({}Hz, {}ch)",
-            device.name().unwrap(),
-            config.sample_rate.0,
-            config.channels
-        );
-        // Attempt to stop any existing stream
-        stream.lock().unwrap().as_ref().map(|stream| {
-            stream.pause().expect("Failed to stop existing stream")
-        });
+    // Set up an input list with its associated stream
+    let (input_list, sample_receiver) = AudioInputListModel::new();
 
-        // Start a new stream with the chosen device
-        stream.lock().unwrap().replace(device.build_input_stream(
-            &config,
-            move |data: &[f32], _| {
+    // Set up an FFT to process samples coming from the input list
+    // todo: this could be built into the visualizer
+    let (mut fft, frequency_receiver) = StreamTransform::new(sample_receiver);
 
-                if config.channels == 1 {
-                    fft.apply(mono_to_stereo(data).as_slice(), config.sample_rate);
-                } else if config.channels == 2 {
-                    fft.apply(deinterleave_stereo(data), config.sample_rate);
-                } else {
-                    eprintln!("{}-channel input not supported!", config.channels);
-                }
-
-                // let deinterleaved = ndarray::Array::from_iter(data.iter().copied())
-                //     .into_shape((data.len() / config.channels as usize, config.channels as usize))
-                //     .expect("Failed to deinterleave stream").into();
-                // fft.apply(&deinterleaved, config.sample_rate);
-            },
-            err_fn,
-            None,
-        ).unwrap());
-
-        // Start the newly created stream
-        stream.lock().unwrap().as_ref().map(|stream| {
-            stream.play().expect("Failed to start input stream");
-        });
-    };
-
+    // Create a visualizer for the data coming from the FFT
     let visualizer = Spectrogram::new();
 
-    let input_list = AudioInputListModel::new();
+
+    // Use a dropdown to select inputs
     let input_dropdown = DropDown::builder()
         .model(&input_list)
         .expression(gtk::PropertyExpression::new(
@@ -99,12 +67,11 @@ fn build_ui(app: &adw::Application) {
         ))
         .build();
     input_dropdown.connect_selected_item_notify(move |dropdown: &DropDown| {
-        let binding = dropdown.selected_item().unwrap();
-        let device = binding.dynamic_cast_ref::<AudioDevice>().unwrap();
-        start_stream(device.get_device().as_ref());
+        input_list.select(dropdown.selected());
     });
     input_dropdown.notify("selected-item");
 
+    // Use a dropdown to select color schemes
     let colorscheme_list = default_color_schemes();
     let colorscheme_dropdown = DropDown::builder()
         .model(&colorscheme_list)
@@ -133,14 +100,12 @@ fn build_ui(app: &adw::Application) {
         .vexpand(false)
         .valign(Align::Start)
         .build();
-
     // Show the toolbar when you hover over it
     let toolbar_hover_controller = gtk::EventControllerMotion::builder().build();
     toolbar_hover_controller.connect_enter(clone!(@weak revealer => move |_, _, _| {
         revealer.set_reveal_child(true);
     }));
     revealer.add_controller(toolbar_hover_controller);
-
     // Hide the toolbar when you hover over the visualizer
     let visualizer_hover_controller = gtk::EventControllerMotion::builder().build();
     visualizer_hover_controller.connect_enter(clone!(@weak revealer => move |_, _, _| {
@@ -165,13 +130,17 @@ fn build_ui(app: &adw::Application) {
         .build();
 
     visualizer.add_tick_callback(move |visualizer, _| {
-        let mut samples = Vec::new();
 
+        // Process the current backlog of samples
+        fft.process();
+
+        // Render any new fft results that were created
+        // todo: Copying to a buffer shouldn't be necessary here
+        let mut samples = Vec::new();
         // Consume any values in the pipeline
-        while let Ok(frequency_sample) = receiver.try_recv() {
+        while let Ok(frequency_sample) = frequency_receiver.try_recv() {
             samples.push(frequency_sample);
         }
-
         // Push the entire block at once
         visualizer.push_frequency_samples(samples);
         Continue

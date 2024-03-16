@@ -1,66 +1,69 @@
+use std::cell::RefCell;
 use std::iter::zip;
-use async_channel::Sender;
+use async_channel::{Receiver, Sender};
 use cpal::SampleRate;
 use fftw::array::AlignedVec;
 use fftw::types::{c32, Sign};
 use fftw::plan::{C2CPlan, C2CPlan32};
 use itertools::Itertools;
 use num_traits::{FloatConst, Zero};
+use ringbuf::{Consumer, HeapConsumer, HeapRb};
 use crate::fourier::{FFT_WINDOW_SIZE, FFT_WINDOW_STRIDE, NUM_FREQUENCIES, PADDED_FFT_WINDOW_SIZE, StereoMagnitude};
 use crate::fourier::interpolated_frequency_sample::{InterpolatedFrequencySample};
 
-
-pub struct ComplexStereoTransform {
-    plan: C2CPlan32,
-    buffer: Vec<c32>,
+pub struct StreamTransform {
+    receiver: RefCell<HeapConsumer<StereoMagnitude>>,
+    plan: RefCell<C2CPlan32>,
     sender: Sender<InterpolatedFrequencySample>,
 }
 
-impl ComplexStereoTransform {
-    pub fn new(sender: Sender<InterpolatedFrequencySample>) -> Self {
+impl StreamTransform {
+    pub fn new(sample_stream: HeapConsumer<StereoMagnitude>) -> (Self, Receiver<InterpolatedFrequencySample>) {
+        let (frequency_sender, frequency_receiver) = async_channel::unbounded();
         let plan = C2CPlan32::aligned(
             &[PADDED_FFT_WINDOW_SIZE],
             Sign::Forward,
             fftw::types::Flag::MEASURE,
         ).unwrap();
 
-        let buffer = vec![c32::default(); FFT_WINDOW_SIZE];
-
-        ComplexStereoTransform {
-            plan,
-            buffer,
-            sender,
-        }
+        (
+            Self {
+                receiver: sample_stream.into(),
+                plan: plan.into(),
+                sender: frequency_sender,
+            },
+            frequency_receiver
+        )
     }
 
-    pub fn apply(&mut self, samples: &[c32], sample_rate: SampleRate) {
+    pub fn process(&self) {
+        let mut sample_stream = self.receiver.borrow_mut();
+        let mut fft_plan = self.plan.borrow_mut();
 
-        // Process the input stream in chunks
-        for chunk in samples.chunks_exact(FFT_WINDOW_STRIDE) {
-            //let start_time = std::time::Instant::now();
+        //println!("Processing {} samples", sample_stream.len());
+        while sample_stream.len() >= FFT_WINDOW_SIZE {
 
-            // Fill the buffer with new data
-            self.buffer.rotate_left(FFT_WINDOW_STRIDE);
-            self.buffer[FFT_WINDOW_SIZE - FFT_WINDOW_STRIDE..].copy_from_slice(chunk);
+            // The next window-length samples provide our input buffer
+            let frame = sample_stream.iter().take(FFT_WINDOW_SIZE);
 
             // Apply windowing and padding
-            let hann_windowed = self.buffer.iter()
+            let frame = frame
                 .enumerate()
                 .map(|(i, v)| {
                     // This function applies a Hann window
                     let scale = 0.5 * (1.0 - ((f32::TAU() * i as f32) / (FFT_WINDOW_SIZE as f32)).cos());
                     v * scale
                 });
-            let padded = hann_windowed.pad_using(PADDED_FFT_WINDOW_SIZE, |_| c32::zero());
+            let frame = frame.pad_using(PADDED_FFT_WINDOW_SIZE, |_| c32::zero());
 
             // Write the processed data to the input buffer
-            let mut padded_buffer = AlignedVec::new(PADDED_FFT_WINDOW_SIZE);
-            for (src, dest) in zip(padded, padded_buffer.iter_mut()) { *dest = src; };
+            let mut sample_buffer = AlignedVec::new(PADDED_FFT_WINDOW_SIZE);
+            for (src, dest) in zip(frame, sample_buffer.iter_mut()) { *dest = src; };
 
             // Perform the FFT
             // for a complex FFT, the output is the same size as the input
             let mut frequency_buffer = AlignedVec::new(PADDED_FFT_WINDOW_SIZE);
-            self.plan.c2c(&mut padded_buffer, &mut frequency_buffer).unwrap();
+            fft_plan.c2c(&mut sample_buffer, &mut frequency_buffer).unwrap();
 
             // Convert to stereo using the equation given in:
             // https://web.archive.org/web/20180312110051/http://www.engineeringproductivitytools.com/stuff/T0001/PT10.HTM
@@ -78,35 +81,13 @@ impl ComplexStereoTransform {
             let frequencies = frequencies
                 .map(|m| m * scale);
 
-            // Send the sample to be displayed
-            let frequency_sample = InterpolatedFrequencySample::new(frequencies, sample_rate);
-            //println!("FFT time: {:.2?}", start_time.elapsed());
-            // We don't care whether the sample actually goes through, so no .expect() here.
-            // (dropping data is best, since we want to keep latency low)
+            // Send the results to the output channel in the form of a frequency sample
+            // fixme: how should the actual current sample rate be communicated to the FFT?
+            let frequency_sample = InterpolatedFrequencySample::new(frequencies, SampleRate { 0: 44100 });
             self.sender.try_send(frequency_sample).ok();
+
+            // Drop the oldest elements in the stream (shifting our window)
+            sample_stream.skip(FFT_WINDOW_STRIDE);
         }
     }
-}
-
-
-// todo: In the future, this could be replaced with an filter on an iterator with no unsafe code
-pub fn deinterleave_stereo(buffer: &[f32]) -> &[StereoMagnitude] {
-    // Adapted from:
-    // https://stackoverflow.com/questions/54185667/how-to-safely-reinterpret-vecf64-as-vecnum-complexcomplexf64-with-half-t
-    // This is safe because:
-    //   - StereoMagnitude is an fftw Conplex<f32>, which has the layout [f32; 2]
-    //   - buffer is a slice, guaranteed to have contiguous memory layout
-    //   - The slice is passed as a reference, so the ownership of the underlying memory is left unchanged
-    unsafe {
-        let ptr = buffer.as_ptr() as *const StereoMagnitude;
-        let len = buffer.len();
-
-        assert_eq!(len % 2, 0);
-
-        std::slice::from_raw_parts(ptr, len / 2)
-    }
-}
-
-pub fn mono_to_stereo(buffer: &[f32]) -> Vec<StereoMagnitude> {
-    buffer.into_iter().map(|v| StereoMagnitude::new(*v, *v)).collect()
 }

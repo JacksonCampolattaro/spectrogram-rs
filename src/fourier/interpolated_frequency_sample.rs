@@ -1,7 +1,7 @@
 use std::ops::Range;
 use cpal::SampleRate;
 use iter_num_tools::lin_space;
-use num_traits::FloatConst;
+use num_traits::{FloatConst, pow};
 
 use crate::fourier::{Frequency, FrequencySample, Period, StereoMagnitude};
 
@@ -66,7 +66,6 @@ impl FrequencySample for InterpolatedFrequencySample {
         let sample_magnitudes = sample_frequencies
             .map(|f| self.magnitude_at(&f));
 
-        // todo: this could use some cleaning up, not a fan of the clone()
         let mean_magnitude = sample_magnitudes.sum::<StereoMagnitude>() / num_samples as f32;
         mean_magnitude
     }
@@ -89,11 +88,10 @@ fn cubic_interpolate(data: &[StereoMagnitude], index: f32) -> StereoMagnitude {
     let x3 = (x1 + 2).min(data.len() - 1);
     let (y0, y1, y2, y3) = (data[x0], data[x1], data[x2], data[x3]);
 
-    let mu2 = mu * mu;
     let a0 = y3 - y2 - y0 + y1;
     let a1 = y0 - y1 - a0;
     let a2 = y2 - y0;
     let a3 = y1;
 
-    (a0 * mu * mu2) + (a1 * mu2) + (a2 * mu + a3)
+    (a0 * pow(mu, 3)) + (a1 * pow(mu, 2)) + (a2 * mu + a3)
 }

@@ -13,7 +13,7 @@ use colorous::*;
 use crate::fourier::StereoMagnitude;
 
 const MIN_DB: f32 = -70.0;
-const MAX_DB: f32 = 0.0;
+const MAX_DB: f32 = -10.0;
 
 glib::wrapper! {
     pub struct ColorScheme(ObjectSubclass<imp::ColorScheme>);

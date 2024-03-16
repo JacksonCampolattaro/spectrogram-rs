@@ -27,7 +27,7 @@ use crate::fourier::{FrequencySample, Frequency};
 use crate::log_scaling::*;
 use crate::colorscheme::*;
 
-const TEXTURE_WIDTH: i32 = 2048;
+const TEXTURE_WIDTH: i32 = 1024;
 const TEXTURE_HEIGHT: i32 = 1024;
 
 glib::wrapper! {
