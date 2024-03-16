@@ -51,7 +51,7 @@ fn build_ui(app: &adw::Application) {
 
     // Set up an FFT to process samples coming from the input list
     // todo: this could be built into the visualizer
-    let (mut fft, frequency_receiver) = StreamTransform::new(sample_receiver);
+    let (mut fft, frequency_receiver) = StreamTransform::new(sample_receiver, input_list.current_config());
 
     // Create a visualizer for the data coming from the FFT
     let visualizer = Spectrogram::new();

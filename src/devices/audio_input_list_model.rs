@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use itertools::Itertools;
-use cpal::{ChannelCount, InputCallbackInfo, SampleRate, SizedSample, Stream};
+use cpal::{ChannelCount, InputCallbackInfo, SampleRate, SizedSample, Stream, StreamConfig};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gtk::{
     glib,
@@ -13,6 +13,7 @@ use ringbuf::{HeapRb, HeapProducer, HeapConsumer};
 use crate::fourier::StereoMagnitude;
 use crate::devices::audio_device::AudioDevice;
 use std::sync::{Arc, Mutex};
+use colorous::Color;
 
 
 glib::wrapper! {
@@ -26,15 +27,17 @@ impl AudioInputListModel {
         let imp = imp::AudioInputListModel::from_obj(&object);
 
         let (sender, receiver) = HeapRb::new(4096).split();
-        imp._sender.set(sender);
+        imp.sender.set(sender);
         (object, receiver)
     }
 
     pub fn select(&self, device_index: u32) {
         let imp = imp::AudioInputListModel::from_obj(self);
+        let mut stream = imp.stream.lock().unwrap();
+        let mut config = imp.config.lock().unwrap();
 
         // If there's an existing stream, close it
-        imp.stream.take().map(|s: cpal::Stream| {
+        stream.take().map(|s: Stream| {
             s.pause().expect("Failed to stop a running stream")
         });
 
@@ -42,36 +45,49 @@ impl AudioInputListModel {
         let device = imp.item(device_index).unwrap()
             .dynamic_cast_ref::<AudioDevice>().unwrap()
             .get_device();
-        let config: cpal::StreamConfig = device.as_ref().default_input_config().unwrap().into();
+        let c = device.as_ref().default_input_config().unwrap().config();
+        *config = device.as_ref().default_input_config().unwrap().config().into();
+        let channels = config.as_ref().unwrap().channels;
+        let sample_rate = config.as_ref().unwrap().sample_rate;
         println!(
             "Listening to device: {} ({}Hz, {}ch)",
             device.name().unwrap(),
-            config.sample_rate.0,
-            config.channels
+            sample_rate.0,
+            channels
         );
 
         // Create an input stream with the selected device
-        let sender = Arc::clone(&imp._sender);
-        imp.stream.replace(device.build_input_stream(
-            &config,
+        let sender = Arc::clone(&imp.sender);
+        *stream = device.build_input_stream(
+            config.as_ref().unwrap(),
             move |data: &[f32], _| {
                 //println!("Received {} samples", data.len());
-                if config.channels == 1 {
+                if channels == 1 {
                     let mut mono_expanded = data.iter().map(|s| StereoMagnitude::new(*s, *s));
                     sender.lock().unwrap().push_iter(&mut mono_expanded);
-                } else if config.channels == 2 {
+                } else if channels == 2 {
                     let mut stereo_expanded = data.iter().tuples().map(|(l, r)| StereoMagnitude::new(*l, *r));
                     sender.lock().unwrap().push_iter(&mut stereo_expanded);
                 } else {
-                    eprintln!("{}-channel input not supported!", config.channels);
+                    eprintln!("{}-channel input not supported!", channels);
                 }
             },
             |err| eprintln!("An error occurred on the input audio stream: {}", err),
             None,
-        ).ok());
+        ).ok();
 
         // Start the newly created stream (usually not necessary)
-        imp.stream.borrow().as_ref().map(|s| s.play().expect("Failed to start input stream"));
+        stream.as_ref().map(|s| s.play().expect("Failed to start input stream"));
+    }
+
+    pub fn current_stream(&self) -> Arc<Mutex<Option<Stream>>> {
+        let imp = imp::AudioInputListModel::from_obj(self);
+        Arc::clone(&imp.stream)
+    }
+
+    pub fn current_config(&self) -> Arc<Mutex<Option<StreamConfig>>> {
+        let imp = imp::AudioInputListModel::from_obj(self);
+        Arc::clone(&imp.config)
     }
 }
 
@@ -79,10 +95,11 @@ mod imp {
     use super::*;
 
     pub struct AudioInputListModel {
-        pub _host: cpal::Host,
-        pub stream: RefCell<Option<Stream>>,
-        pub _sender: Arc<Mutex<HeapProducer<StereoMagnitude>>>,
         devices: Vec<Rc<cpal::Device>>,
+        pub _host: cpal::Host,
+        pub stream: Arc<Mutex<Option<Stream>>>,
+        pub config: Arc<Mutex<Option<StreamConfig>>>,
+        pub sender: Arc<Mutex<HeapProducer<StereoMagnitude>>>,
     }
 
     #[glib::object_subclass]
@@ -101,8 +118,9 @@ mod imp {
             let (dummy_sender, _) = HeapRb::new(1).split();
             Self {
                 _host,
-                stream: None.into(),
-                _sender: Arc::new(dummy_sender.into()),
+                stream: Arc::new(None.into()),
+                config: Arc::new(None.into()),
+                sender: Arc::new(dummy_sender.into()),
                 devices,
             }
         }

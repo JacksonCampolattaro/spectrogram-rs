@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 use std::iter::zip;
+use std::sync::{Arc, Mutex};
 use async_channel::{Receiver, Sender};
-use cpal::SampleRate;
+use cpal::{SampleRate, StreamConfig};
 use fftw::array::AlignedVec;
 use fftw::types::{c32, Sign};
 use fftw::plan::{C2CPlan, C2CPlan32};
@@ -13,12 +14,13 @@ use crate::fourier::interpolated_frequency_sample::{InterpolatedFrequencySample}
 
 pub struct StreamTransform {
     receiver: RefCell<HeapConsumer<StereoMagnitude>>,
+    stream_config: Arc<Mutex<Option<StreamConfig>>>,
     plan: RefCell<C2CPlan32>,
     sender: Sender<InterpolatedFrequencySample>,
 }
 
 impl StreamTransform {
-    pub fn new(sample_stream: HeapConsumer<StereoMagnitude>) -> (Self, Receiver<InterpolatedFrequencySample>) {
+    pub fn new(sample_stream: HeapConsumer<StereoMagnitude>, config: Arc<Mutex<Option<StreamConfig>>>) -> (Self, Receiver<InterpolatedFrequencySample>) {
         let (frequency_sender, frequency_receiver) = async_channel::unbounded();
         let plan = C2CPlan32::aligned(
             &[PADDED_FFT_WINDOW_SIZE],
@@ -29,6 +31,7 @@ impl StreamTransform {
         (
             Self {
                 receiver: sample_stream.into(),
+                stream_config: config,
                 plan: plan.into(),
                 sender: frequency_sender,
             },
@@ -83,7 +86,11 @@ impl StreamTransform {
 
             // Send the results to the output channel in the form of a frequency sample
             // fixme: how should the actual current sample rate be communicated to the FFT?
-            let frequency_sample = InterpolatedFrequencySample::new(frequencies, SampleRate { 0: 44100 });
+            let stream_config = self.stream_config.lock().unwrap();
+            let frequency_sample = InterpolatedFrequencySample::new(
+                frequencies,
+                stream_config.as_ref().unwrap().sample_rate
+            );
             self.sender.try_send(frequency_sample).ok();
 
             // Drop the oldest elements in the stream (shifting our window)
