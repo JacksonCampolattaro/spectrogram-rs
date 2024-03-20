@@ -4,14 +4,14 @@ use ringbuf::{HeapConsumer, HeapRb};
 use async_channel::Receiver;
 use plotters::coord::types::RangedCoordf32;
 
-use adw::{glib, glib::{Properties, Object}, gdk::gdk_pixbuf::{Pixbuf, Colorspace}, prelude::ObjectExt, subclass::prelude::{ObjectImpl, WidgetImpl, BoxImpl, ObjectSubclass, DerivedObjectProperties}, gdk};
+use adw::{glib, glib::{Properties, Object}, gdk::gdk_pixbuf::{Pixbuf, Colorspace}, prelude::ObjectExt, subclass::prelude::{ObjectImpl, WidgetImpl, ObjectSubclass, DerivedObjectProperties}, gdk};
 use adw;
 use adw::gdk::Texture;
 use adw::prelude::BinExt;
 use adw::subclass::prelude::ObjectSubclassExt;
 use cpal::StreamConfig;
 use gtk::{ContentFit, Picture};
-use gtk::prelude::{BoxExt, WidgetExt};
+use gtk::prelude::{WidgetExt};
 
 use crate::{
     colorscheme::ColorScheme,
@@ -28,36 +28,17 @@ const TEXTURE_HEIGHT: i32 = 1024;
 
 glib::wrapper! {
     pub struct SimpleSpectrogram(ObjectSubclass<imp::SimpleSpectrogram>)
-        @extends gtk::Box, gtk::Widget;
+        @extends gtk::Widget;
 }
 
 impl SimpleSpectrogram {
     pub fn new(sample_stream: HeapConsumer<StereoMagnitude>, stream_config: Arc<Mutex<Option<StreamConfig>>>) -> SimpleSpectrogram {
-        let object = Object::builder()
-            // .property("child", picture)
-            // .property("child", gtk::Picture::new())
-            .build();
+        let object = Object::builder().build();
         let imp = imp::SimpleSpectrogram::from_obj(&object);
         let (fft, frequency_stream) = StreamTransform::new(sample_stream, stream_config);
         imp.fft.replace(fft);
         imp.frequency_stream.replace(frequency_stream);
-
-        let picture = Picture::builder()
-            .paintable(&Texture::for_pixbuf(&imp.buffer))
-            .content_fit(ContentFit::Fill)
-            .hexpand(true)
-            .build();
-        object.append(&picture);
-
         object
-    }
-
-    pub fn update(&self) {
-        let imp = imp::SimpleSpectrogram::from_obj(self);
-        imp.fft.borrow().process();
-        imp.render();
-        self.queue_draw();
-        self.queue_resize();
     }
 }
 
@@ -91,7 +72,7 @@ mod imp {
     impl ObjectSubclass for SimpleSpectrogram {
         const NAME: &'static str = "SimpleSpectrogram";
         type Type = super::SimpleSpectrogram;
-        type ParentType = gtk::Box;
+        type ParentType = gtk::Widget;
 
         fn new() -> Self {
             let buffer = Pixbuf::new(
@@ -149,7 +130,7 @@ mod imp {
                     background_color.b as f32 / 255.0,
                     1.0,
                 ),
-                &bounds
+                &bounds,
             );
             snapshot.append_scaled_texture(
                 &Texture::for_pixbuf(&self.buffer),
@@ -157,10 +138,6 @@ mod imp {
                 &bounds,
             );
         }
-    }
-
-    impl BoxImpl for SimpleSpectrogram {
-        // todo
     }
 
     impl SimpleSpectrogram {
