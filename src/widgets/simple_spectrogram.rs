@@ -1,64 +1,78 @@
-use adw::glib::Object;
-use std::error::Error;
-use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
-use cpal::StreamConfig;
+use std::cell::RefCell;
+use ringbuf::{HeapConsumer, HeapRb};
 use async_channel::Receiver;
-use ringbuf::HeapRb;
-use crate::fourier::interpolated_frequency_sample::InterpolatedFrequencySample;
+use plotters::coord::types::RangedCoordf32;
 
-use gtk::{
-    gdk,
-    glib,
-    glib::Properties,
-    gsk::ScalingFilter,
-    prelude::*,
-    subclass::prelude::*,
+use adw::{glib, glib::{Properties, Object}, gdk::gdk_pixbuf::{Pixbuf, Colorspace}, prelude::ObjectExt, subclass::prelude::{ObjectImpl, WidgetImpl, BoxImpl, ObjectSubclass, DerivedObjectProperties}, gdk};
+use adw;
+use adw::gdk::Texture;
+use adw::prelude::BinExt;
+use adw::subclass::prelude::ObjectSubclassExt;
+use cpal::StreamConfig;
+use gtk::{ContentFit, Picture};
+use gtk::prelude::{BoxExt, WidgetExt};
+
+use crate::{
+    colorscheme::ColorScheme,
+    fourier::interpolated_frequency_sample::InterpolatedFrequencySample,
+    fourier::transform::StreamTransform,
+    log_scaling::{LogCoordf64, IntoReversibleLogRange},
+    fourier::Frequency,
 };
-
-use gdk::{
-    Texture,
-    gdk_pixbuf::*,
-};
-
-use plotters::prelude::*;
-use plotters::coord::{
-    ReverseCoordTranslate,
-    types::RangedCoordf32,
-};
-use plotters_cairo::CairoBackend;
-use ringbuf::HeapConsumer;
-
-use crate::fourier::{FrequencySample, Frequency, StereoMagnitude, transform::StreamTransform};
-use crate::log_scaling::*;
-use crate::colorscheme::*;
+use crate::fourier::StereoMagnitude;
+use crate::widgets::spectrogram::Spectrogram;
 
 const TEXTURE_WIDTH: i32 = 1024;
 const TEXTURE_HEIGHT: i32 = 1024;
 
 glib::wrapper! {
-    pub struct Spectrogram(ObjectSubclass<imp::Spectrogram>)
-        @extends gtk::Widget;
+    pub struct SimpleSpectrogram(ObjectSubclass<imp::SimpleSpectrogram>)
+        @extends gtk::Box, gtk::Widget;
 }
 
-impl Spectrogram {
-    pub fn new(sample_stream: HeapConsumer<StereoMagnitude>, stream_config: Arc<Mutex<Option<StreamConfig>>>) -> Spectrogram {
-        let object = Object::builder().build();
-        let imp = imp::Spectrogram::from_obj(&object);
+impl SimpleSpectrogram {
+    pub fn new(sample_stream: HeapConsumer<StereoMagnitude>, stream_config: Arc<Mutex<Option<StreamConfig>>>) -> SimpleSpectrogram {
+        let object = Object::builder()
+            // .property("child", picture)
+            // .property("child", gtk::Picture::new())
+            .build();
+        let imp = imp::SimpleSpectrogram::from_obj(&object);
         let (fft, frequency_stream) = StreamTransform::new(sample_stream, stream_config);
         imp.fft.replace(fft);
         imp.frequency_stream.replace(frequency_stream);
 
+        let picture = Picture::builder()
+            .paintable(&Texture::for_pixbuf(&imp.buffer))
+            .content_fit(ContentFit::Fill)
+            .hexpand(true)
+            .build();
+        object.append(&picture);
+
         object
+    }
+
+    pub fn update(&self) {
+        let imp = imp::SimpleSpectrogram::from_obj(self);
+        imp.fft.borrow().process();
+        imp.render();
+        self.queue_draw();
+        self.queue_resize();
     }
 }
 
 mod imp {
+    use adw::gdk::RGBA;
+    use gtk::gsk::ScalingFilter;
+    use gtk::prelude::SnapshotExt;
+    use plotters::coord::ReverseCoordTranslate;
+    use plotters::prelude::Cartesian2d;
+    use crate::fourier::FrequencySample;
     use super::*;
 
     #[derive(Properties)]
-    #[properties(wrapper_type = super::Spectrogram)]
-    pub struct Spectrogram {
+    #[properties(wrapper_type = super::SimpleSpectrogram)]
+    pub struct SimpleSpectrogram {
         // Appearance settings
         pub x_range: RangedCoordf32,
         pub y_range: LogCoordf64,
@@ -74,10 +88,10 @@ mod imp {
     }
 
     #[glib::object_subclass]
-    impl ObjectSubclass for Spectrogram {
-        const NAME: &'static str = "Spectrogram";
-        type Type = super::Spectrogram;
-        type ParentType = gtk::Widget;
+    impl ObjectSubclass for SimpleSpectrogram {
+        const NAME: &'static str = "SimpleSpectrogram";
+        type Type = super::SimpleSpectrogram;
+        type ParentType = gtk::Box;
 
         fn new() -> Self {
             let buffer = Pixbuf::new(
@@ -107,15 +121,19 @@ mod imp {
     }
 
     #[glib::derived_properties]
-    impl ObjectImpl for Spectrogram {}
+    impl ObjectImpl for SimpleSpectrogram {}
 
-    impl WidgetImpl for Spectrogram {
+    impl WidgetImpl for SimpleSpectrogram {
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             let width = self.obj().width() as u32;
             let height = self.obj().height() as u32;
             if width == 0 || height == 0 {
                 return;
             }
+            let bounds = gtk::graphene::Rect::new(
+                0.0, 0.0,
+                width as f32, height as f32,
+            );
 
             // Make sure there are no unprocessed audio samples
             self.fft.borrow().process();
@@ -123,14 +141,30 @@ mod imp {
             // Render the frequency stream to the buffer
             self.render();
 
-            // Draw the plot
-            let bounds = gtk::graphene::Rect::new(0.0, 0.0, width as f32, height as f32);
-            self.plot(snapshot, &bounds).unwrap();
+            let background_color = self.palette.borrow().background();
+            snapshot.append_color(
+                &RGBA::new(
+                    background_color.r as f32 / 255.0,
+                    background_color.g as f32 / 255.0,
+                    background_color.b as f32 / 255.0,
+                    1.0,
+                ),
+                &bounds
+            );
+            snapshot.append_scaled_texture(
+                &Texture::for_pixbuf(&self.buffer),
+                ScalingFilter::Nearest,
+                &bounds,
+            );
         }
     }
 
-    impl Spectrogram {
-        fn render(&self) {
+    impl BoxImpl for SimpleSpectrogram {
+        // todo
+    }
+
+    impl SimpleSpectrogram {
+        pub fn render(&self) {
             let start_time = std::time::Instant::now();
             let buffer = &self.buffer;
             let frequency_stream = self.frequency_stream.borrow();
@@ -178,69 +212,6 @@ mod imp {
                 }
             }
             println!("Rendered {} samples in {:.2?}", num_samples, start_time.elapsed());
-        }
-
-        fn plot(
-            &self,
-            snapshot: &gtk::Snapshot,
-            bounds: &gtk::graphene::Rect,
-        ) -> Result<(), Box<dyn Error>> {
-            let start_time = std::time::Instant::now();
-            let background_color = self.palette.borrow().background();
-            let background_color = RGBColor(background_color.r, background_color.g, background_color.b);
-            let foreground_color = self.palette.borrow().foreground();
-            let foreground_color = RGBColor(foreground_color.r, foreground_color.g, foreground_color.b);
-
-            // Start by drawing the plot bounds
-            let pixel_range = {
-                let cr = snapshot.append_cairo(&bounds.clone());
-                let root = CairoBackend::new(
-                    &cr,
-                    (bounds.width() as u32, bounds.height() as u32),
-                ).unwrap().into_drawing_area();
-
-                root.fill(&background_color).unwrap();
-
-                let mut chart = ChartBuilder::on(&root)
-                    .margin(16)
-                    .x_label_area_size(16)
-                    .y_label_area_size(45)
-                    .build_cartesian_2d(
-                        self.x_range.clone(),
-                        self.y_range.clone(),
-                    )
-                    .unwrap();
-
-
-                chart
-                    .configure_mesh()
-                    .label_style(("sans-serif", 10, &foreground_color))
-                    .axis_style(&foreground_color)
-                    .disable_mesh()
-                    .draw()
-                    .unwrap();
-
-                root.present().expect("Failed to present plot");
-
-                let pixel_range = chart.plotting_area().get_pixel_range();
-                gtk::graphene::Rect::new(
-                    (pixel_range.0.start) as f32 - 0.5,
-                    (pixel_range.1.start) as f32 - 0.5,
-                    (pixel_range.0.end - pixel_range.0.start) as f32,
-                    (pixel_range.1.end - pixel_range.1.start) as f32,
-                )
-            };
-
-            // Draw the contents of the plot
-            let texture = Texture::for_pixbuf(&self.buffer);
-            snapshot.append_scaled_texture(
-                &texture,
-                ScalingFilter::Nearest,
-                &pixel_range,
-            );
-
-            println!("Drew complete plot in {:?}", start_time.elapsed());
-            Ok(())
         }
     }
 }

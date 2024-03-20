@@ -23,6 +23,9 @@ impl InterpolatedFrequencySample {
     fn index_of(&self, frequency: &Frequency) -> f32 {
         let index = frequency * self.period();
         assert!(0.0 < index && index < (self.magnitudes.len() - 1) as f32);
+        // if !(0.0 < index && index < (self.magnitudes.len() - 1) as f32) {
+        //     return 0.0;
+        // }
         index as f32
     }
 

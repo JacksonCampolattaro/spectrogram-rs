@@ -12,6 +12,7 @@ use ringbuf::{Consumer, HeapConsumer, HeapRb};
 use crate::fourier::{FFT_WINDOW_SIZE, FFT_WINDOW_STRIDE, NUM_FREQUENCIES, PADDED_FFT_WINDOW_SIZE, StereoMagnitude};
 use crate::fourier::interpolated_frequency_sample::{InterpolatedFrequencySample};
 
+// todo: This could really use a better name
 pub struct StreamTransform {
     receiver: RefCell<HeapConsumer<StereoMagnitude>>,
     stream_config: Arc<Mutex<Option<StreamConfig>>>,
@@ -40,10 +41,10 @@ impl StreamTransform {
     }
 
     pub fn process(&self) {
+        let start_time = std::time::Instant::now();
         let mut sample_stream = self.receiver.borrow_mut();
         let mut fft_plan = self.plan.borrow_mut();
 
-        //println!("Processing {} samples", sample_stream.len());
         while sample_stream.len() >= FFT_WINDOW_SIZE {
 
             // The next window-length samples provide our input buffer
@@ -89,12 +90,13 @@ impl StreamTransform {
             let stream_config = self.stream_config.lock().unwrap();
             let frequency_sample = InterpolatedFrequencySample::new(
                 frequencies,
-                stream_config.as_ref().unwrap().sample_rate
+                stream_config.as_ref().unwrap().sample_rate,
             );
             self.sender.try_send(frequency_sample).ok();
 
             // Drop the oldest elements in the stream (shifting our window)
             sample_stream.skip(FFT_WINDOW_STRIDE);
         }
+        println!("Performed FFT processing in {:.2?}", start_time.elapsed())
     }
 }

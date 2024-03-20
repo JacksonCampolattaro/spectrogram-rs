@@ -12,7 +12,7 @@ use gtk::prelude::*;
 use itertools::Itertools;
 
 use fourier::transform::*;
-use widgets::spectrogram::Spectrogram;
+use widgets::{spectrogram::Spectrogram, simple_spectrogram::SimpleSpectrogram};
 use devices::audio_device::AudioDevice;
 use devices::audio_input_list_model::AudioInputListModel;
 
@@ -49,12 +49,8 @@ fn build_ui(app: &adw::Application) {
     // Set up an input list with its associated stream
     let (input_list, sample_receiver) = AudioInputListModel::new();
 
-    // Set up an FFT to process samples coming from the input list
-    // todo: this could be built into the visualizer
-    let (mut fft, frequency_receiver) = StreamTransform::new(sample_receiver, input_list.current_config());
-
-    // Create a visualizer for the data coming from the FFT
-    let visualizer = Spectrogram::new();
+    // Create a visualizer for the data coming from input list
+    let visualizer = SimpleSpectrogram::new(sample_receiver, input_list.current_config());
 
 
     // Use a dropdown to select inputs
@@ -130,19 +126,8 @@ fn build_ui(app: &adw::Application) {
         .build();
 
     visualizer.add_tick_callback(move |visualizer, _| {
-
-        // Process the current backlog of samples
-        fft.process();
-
-        // Render any new fft results that were created
-        // todo: Copying to a buffer shouldn't be necessary here
-        let mut samples = Vec::new();
-        // Consume any values in the pipeline
-        while let Ok(frequency_sample) = frequency_receiver.try_recv() {
-            samples.push(frequency_sample);
-        }
-        // Push the entire block at once
-        visualizer.push_frequency_samples(samples);
+        // visualizer.update();
+        visualizer.queue_draw();
         Continue
     });
 
