@@ -22,11 +22,11 @@ impl InterpolatedFrequencySample {
 
     fn index_of(&self, frequency: &Frequency) -> f32 {
         let index = frequency * self.period();
-        assert!(0.0 < index && index < (self.magnitudes.len() - 1) as f32);
+        // assert!(0.0 < index && index < (self.magnitudes.len() - 1) as f32);
         // if !(0.0 < index && index < (self.magnitudes.len() - 1) as f32) {
         //     return 0.0;
         // }
-        index as f32
+        index.clamp(0.0, (self.magnitudes.len() - 1) as f32)
     }
 
     fn frequency_of(&self, index: f32) -> Frequency {
@@ -57,8 +57,6 @@ impl FrequencySample for InterpolatedFrequencySample {
     }
 
     fn magnitude_in(&self, frequencies: Range<Frequency>) -> StereoMagnitude {
-
-        // todo: this could be sped up by storing the magnitudes in prefix-sum form!
 
         // Determine the number of samples to take
         let indices = self.index_of(&frequencies.start)..self.index_of(&frequencies.end);

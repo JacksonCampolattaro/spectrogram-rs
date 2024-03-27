@@ -11,8 +11,7 @@ use gtk::{DropDown, glib, Align, RevealerTransitionType, Overlay};
 use gtk::prelude::*;
 use itertools::Itertools;
 
-use fourier::transform::*;
-use widgets::{spectrogram::Spectrogram, simple_spectrogram::SimpleSpectrogram};
+use widgets::{simple_spectrogram::SimpleSpectrogram, spectrogram::Spectrogram};
 use devices::audio_device::AudioDevice;
 use devices::audio_input_list_model::AudioInputListModel;
 
@@ -50,8 +49,8 @@ fn build_ui(app: &adw::Application) {
     let (input_list, sample_receiver) = AudioInputListModel::new();
 
     // Create a visualizer for the data coming from input list
-    let visualizer = SimpleSpectrogram::new(sample_receiver, input_list.current_config());
-
+    let visualizer = SimpleSpectrogram::new(sample_receiver);
+    input_list.bind_property("sample-rate", &visualizer, "sample-rate").build();
 
     // Use a dropdown to select inputs
     let input_dropdown = DropDown::builder()
@@ -67,7 +66,7 @@ fn build_ui(app: &adw::Application) {
     });
     input_dropdown.notify("selected-item");
 
-    // Use a dropdown to select color schemes
+    // Use another dropdown to select color schemes
     let colorscheme_list = default_color_schemes();
     let colorscheme_dropdown = DropDown::builder()
         .model(&colorscheme_list)
@@ -84,7 +83,7 @@ fn build_ui(app: &adw::Application) {
     let toolbar = adw::HeaderBar::builder()
         .vexpand(false)
         .valign(Align::Start)
-        .css_classes(["osd"])
+        .css_classes(["flat", "osd"]) // "osd" is also nice here
         .build();
     toolbar.pack_end(&input_dropdown);
     toolbar.pack_end(&colorscheme_dropdown);
@@ -96,7 +95,6 @@ fn build_ui(app: &adw::Application) {
         .vexpand(false)
         .valign(Align::Start)
         .build();
-    // Show the toolbar when you hover over it
     let toolbar_hover_controller = gtk::EventControllerMotion::builder().build();
     toolbar_hover_controller.connect_enter(clone!(@weak revealer => move |_, _, _| {
         revealer.set_reveal_child(true);
@@ -124,12 +122,11 @@ fn build_ui(app: &adw::Application) {
         .decorated(true)
         .content(&overlay)
         .build();
-
-    visualizer.add_tick_callback(move |visualizer, _| {
-        // visualizer.update();
-        visualizer.queue_draw();
-        Continue
-    });
+    //
+    // visualizer.add_tick_callback(move |visualizer, _| {
+    //     visualizer.queue_draw();
+    //     Continue
+    // });
 
     // Present window
     window.present();

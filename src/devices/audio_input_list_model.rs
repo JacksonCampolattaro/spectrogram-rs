@@ -6,8 +6,10 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gtk::{
     glib,
     glib::*,
+    glib::property::*,
     subclass::prelude::*,
     gio::ListModel,
+    prelude::*,
 };
 use ringbuf::{HeapRb, HeapProducer, HeapConsumer};
 use crate::fourier::StereoMagnitude;
@@ -49,6 +51,8 @@ impl AudioInputListModel {
         *config = device.as_ref().default_input_config().unwrap().config().into();
         let channels = config.as_ref().unwrap().channels;
         let sample_rate = config.as_ref().unwrap().sample_rate;
+        imp.sample_rate.replace(sample_rate.0);
+        self.notify_sample_rate();
         println!(
             "Listening to device: {} ({}Hz, {}ch)",
             device.name().unwrap(),
@@ -94,12 +98,17 @@ impl AudioInputListModel {
 mod imp {
     use super::*;
 
+    #[derive(Properties)]
+    #[properties(wrapper_type = super::AudioInputListModel)]
     pub struct AudioInputListModel {
         devices: Vec<Rc<cpal::Device>>,
         pub _host: cpal::Host,
         pub stream: Arc<Mutex<Option<Stream>>>,
         pub config: Arc<Mutex<Option<StreamConfig>>>,
         pub sender: Arc<Mutex<HeapProducer<StereoMagnitude>>>,
+
+        #[property(get)]
+        pub sample_rate: RefCell<u32>,
     }
 
     #[glib::object_subclass]
@@ -122,10 +131,12 @@ mod imp {
                 config: Arc::new(None.into()),
                 sender: Arc::new(dummy_sender.into()),
                 devices,
+                sample_rate: 0.into()
             }
         }
     }
 
+    #[glib::derived_properties]
     impl ObjectImpl for AudioInputListModel {}
 
     impl ListModelImpl for AudioInputListModel {

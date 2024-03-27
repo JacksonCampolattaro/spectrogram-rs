@@ -12,16 +12,22 @@ use ringbuf::{Consumer, HeapConsumer, HeapRb};
 use crate::fourier::{FFT_WINDOW_SIZE, FFT_WINDOW_STRIDE, NUM_FREQUENCIES, PADDED_FFT_WINDOW_SIZE, StereoMagnitude};
 use crate::fourier::interpolated_frequency_sample::{InterpolatedFrequencySample};
 
-// todo: This could really use a better name
-pub struct StreamTransform {
+use biquad::*;
+use std::ops::Range;
+
+pub struct FilteredStreamTransform {
     receiver: RefCell<HeapConsumer<StereoMagnitude>>,
     stream_config: Arc<Mutex<Option<StreamConfig>>>,
     plan: RefCell<C2CPlan32>,
     sender: Sender<InterpolatedFrequencySample>,
 }
 
-impl StreamTransform {
-    pub fn new(sample_stream: HeapConsumer<StereoMagnitude>, config: Arc<Mutex<Option<StreamConfig>>>) -> (Self, Receiver<InterpolatedFrequencySample>) {
+impl FilteredStreamTransform {
+    pub fn new(
+        sample_stream: HeapConsumer<StereoMagnitude>,
+        config: Arc<Mutex<Option<StreamConfig>>>,
+        frequency_range: Range<Hertz<f32>>,
+    ) -> (Self, Receiver<InterpolatedFrequencySample>) {
         let (frequency_sender, frequency_receiver) = async_channel::unbounded();
         let plan = C2CPlan32::aligned(
             &[PADDED_FFT_WINDOW_SIZE],

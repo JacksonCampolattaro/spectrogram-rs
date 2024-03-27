@@ -1,9 +1,10 @@
 use std::ops::Range;
 use fftw::types::c32;
 
-pub mod transform;
 pub mod interpolated_frequency_sample;
-mod fast_frequency_sample;
+pub mod filtered_transform;
+pub mod fft;
+pub mod audio_transform;
 
 const FFT_WINDOW_SIZE: usize = 2048;
 const PADDED_FFT_WINDOW_SIZE: usize = FFT_WINDOW_SIZE * 2;
