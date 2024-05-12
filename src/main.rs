@@ -1,3 +1,4 @@
+use std::ptr;
 use std::sync::{Arc, Mutex};
 
 use adw::ColorScheme;
@@ -18,6 +19,7 @@ use devices::audio_input_list_model::AudioInputListModel;
 use crate::colorscheme::*;
 use crate::fourier::interpolated_frequency_sample::InterpolatedFrequencySample;
 use crate::fourier::StereoMagnitude;
+use crate::widgets::oscilloscope::Oscilloscope;
 
 mod fourier;
 mod widgets;
@@ -29,6 +31,26 @@ mod colorscheme;
 const APP_ID: &str = "nl.campolattaro.jackson.spectrogram";
 
 fn main() -> glib::ExitCode {
+
+    // Load GL pointers from epoxy (GL context management library used by GTK).
+    {
+        #[cfg(target_os = "macos")]
+            let library = unsafe { libloading::os::unix::Library::new("libepoxy.0.dylib") }
+            .or_else(|_| unsafe { libloading::os::unix::Library::new("/opt/homebrew/Cellar/libepoxy/1.5.10/lib/libepoxy.0.dylib") })
+            .unwrap();
+        #[cfg(all(unix, not(target_os = "macos")))]
+            let library = unsafe { libloading::os::unix::Library::new("libepoxy.so.0") }.unwrap();
+        #[cfg(windows)]
+            let library = libloading::os::windows::Library::open_already_loaded("libepoxy-0.dll")
+            .or_else(|_| libloading::os::windows::Library::open_already_loaded("epoxy-0.dll"))
+            .unwrap();
+
+        epoxy::load_with(|name| {
+            unsafe { library.get::<_>(name.as_bytes()) }
+                .map(|symbol| *symbol)
+                .unwrap_or(ptr::null())
+        });
+    }
 
     // Create a new application
     let app = adw::Application::builder().application_id(APP_ID).build();
@@ -49,7 +71,7 @@ fn build_ui(app: &adw::Application) {
     let (input_list, sample_receiver) = AudioInputListModel::new();
 
     // Create a visualizer for the data coming from input list
-    let visualizer = SimpleSpectrogram::new(sample_receiver);
+    let visualizer = Oscilloscope::new(sample_receiver);
     input_list.bind_property("sample-rate", &visualizer, "sample-rate").build();
 
     // Use a dropdown to select inputs
@@ -76,9 +98,9 @@ fn build_ui(app: &adw::Application) {
             "name",
         ))
         .build();
-    colorscheme_dropdown.bind_property("selected_item", &visualizer, "palette")
-        .sync_create()
-        .build();
+    // colorscheme_dropdown.bind_property("selected_item", &visualizer, "palette")
+    //     .sync_create()
+    //     .build();
 
     let toolbar = adw::HeaderBar::builder()
         .vexpand(false)

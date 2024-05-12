@@ -179,7 +179,7 @@ mod imp {
                         self.offset.get() as i32, 0,
                         self.buffer.width() - self.offset.get() as i32, self.buffer.height(),
                     )),
-                    ScalingFilter::Linear,
+                    ScalingFilter::Nearest,
                     &Rect::new(
                         0.0, 0.0,
                         width - window_space_offset, height,
@@ -193,7 +193,7 @@ mod imp {
                         0, 0,
                         self.offset.get() as i32, self.buffer.height(),
                     )),
-                    ScalingFilter::Linear,
+                    ScalingFilter::Nearest,
                     &Rect::new(
                         width - window_space_offset, 0.0,
                         window_space_offset, height,
