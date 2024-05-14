@@ -20,6 +20,7 @@ use crate::colorscheme::*;
 use crate::fourier::interpolated_frequency_sample::InterpolatedFrequencySample;
 use crate::fourier::StereoMagnitude;
 use crate::widgets::oscilloscope::Oscilloscope;
+use crate::widgets::placeholder::PlaceholderVisualizer;
 
 mod fourier;
 mod widgets;
@@ -67,11 +68,13 @@ fn main() -> glib::ExitCode {
 
 fn build_ui(app: &adw::Application) {
 
+
     // Set up an input list with its associated stream
     let (input_list, sample_receiver) = AudioInputListModel::new();
 
     // Create a visualizer for the data coming from input list
     let visualizer = Oscilloscope::new(sample_receiver);
+    // let visualizer = PlaceholderVisualizer::new(sample_receiver);
     input_list.bind_property("sample-rate", &visualizer, "sample-rate").build();
 
     // Use a dropdown to select inputs
@@ -98,9 +101,10 @@ fn build_ui(app: &adw::Application) {
             "name",
         ))
         .build();
-    // colorscheme_dropdown.bind_property("selected_item", &visualizer, "palette")
-    //     .sync_create()
-    //     .build();
+
+    // // colorscheme_dropdown.bind_property("selected_item", &visualizer, "palette")
+    // //     .sync_create()
+    // //     .build();
 
     let toolbar = adw::HeaderBar::builder()
         .vexpand(false)
@@ -144,11 +148,6 @@ fn build_ui(app: &adw::Application) {
         .decorated(true)
         .content(&overlay)
         .build();
-    //
-    // visualizer.add_tick_callback(move |visualizer, _| {
-    //     visualizer.queue_draw();
-    //     Continue
-    // });
 
     // Present window
     window.present();

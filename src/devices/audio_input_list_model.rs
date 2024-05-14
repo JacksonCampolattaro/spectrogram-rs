@@ -11,11 +11,10 @@ use gtk::{
     gio::ListModel,
     prelude::*,
 };
-use ringbuf::{HeapRb, HeapProducer, HeapConsumer};
+use ringbuf::{HeapRb, HeapProd, HeapCons, traits::{Producer, Split}};
 use crate::fourier::StereoMagnitude;
 use crate::devices::audio_device::AudioDevice;
 use std::sync::{Arc, Mutex};
-use colorous::Color;
 
 
 glib::wrapper! {
@@ -24,7 +23,7 @@ glib::wrapper! {
 }
 
 impl AudioInputListModel {
-    pub fn new() -> (AudioInputListModel, HeapConsumer<StereoMagnitude>) {
+    pub fn new() -> (AudioInputListModel, HeapCons<StereoMagnitude>) {
         let object = Object::builder().build();
         let imp = imp::AudioInputListModel::from_obj(&object);
 
@@ -65,7 +64,6 @@ impl AudioInputListModel {
         *stream = device.build_input_stream(
             config.as_ref().unwrap(),
             move |data: &[f32], _| {
-                //println!("Received {} samples", data.len());
                 if channels == 1 {
                     let mut mono_expanded = data.iter().map(|s| StereoMagnitude::new(*s, *s));
                     sender.lock().unwrap().push_iter(&mut mono_expanded);
@@ -105,7 +103,7 @@ mod imp {
         pub _host: cpal::Host,
         pub stream: Arc<Mutex<Option<Stream>>>,
         pub config: Arc<Mutex<Option<StreamConfig>>>,
-        pub sender: Arc<Mutex<HeapProducer<StereoMagnitude>>>,
+        pub sender: Arc<Mutex<HeapProd<StereoMagnitude>>>,
 
         #[property(get)]
         pub sample_rate: RefCell<u32>,

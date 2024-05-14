@@ -23,7 +23,7 @@ use gdk::{
 
 use plotters::prelude::*;
 use plotters_cairo::CairoBackend;
-use ringbuf::HeapConsumer;
+use ringbuf::{HeapCons, traits::Split};
 
 use crate::fourier::{FrequencySample, Frequency, StereoMagnitude};
 use crate::log_scaling::*;
@@ -38,7 +38,7 @@ glib::wrapper! {
 }
 
 impl Spectrogram {
-    pub fn new(sample_stream: HeapConsumer<StereoMagnitude>) -> Spectrogram {
+    pub fn new(sample_stream: HeapCons<StereoMagnitude>) -> Spectrogram {
         let object = Object::builder()
             // .property("spectrogram", SimpleSpectrogram::new(sample_stream))
             .build();

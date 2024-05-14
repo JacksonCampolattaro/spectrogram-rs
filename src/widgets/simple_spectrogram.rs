@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use std::cell::RefCell;
-use ringbuf::{HeapConsumer, HeapRb};
+use ringbuf::{HeapCons, HeapRb, traits::Split};
 use async_channel::Receiver;
 use plotters::coord::types::RangedCoordf32;
 use std::cell::Cell;
@@ -33,7 +33,7 @@ glib::wrapper! {
 }
 
 impl SimpleSpectrogram {
-    pub fn new(sample_stream: HeapConsumer<StereoMagnitude>) -> SimpleSpectrogram {
+    pub fn new(sample_stream: HeapCons<StereoMagnitude>) -> SimpleSpectrogram {
         let object = Object::builder().build();
         let imp = imp::SimpleSpectrogram::from_obj(&object);
         imp.fft.borrow_mut().input_stream = sample_stream;
@@ -72,8 +72,8 @@ mod imp {
 
         // FFT parameters
         #[property(name = "sample-rate", set = Self::set_sample_rate, type = u32)]
-        // todo: period, stride, etc.
         pub fft: RefCell<AudioStreamTransform<FastFourierTransform>>,
+        // todo: period, stride, etc.
     }
 
     #[glib::object_subclass]
@@ -179,7 +179,7 @@ mod imp {
                         self.offset.get() as i32, 0,
                         self.buffer.width() - self.offset.get() as i32, self.buffer.height(),
                     )),
-                    ScalingFilter::Nearest,
+                    ScalingFilter::Linear,
                     &Rect::new(
                         0.0, 0.0,
                         width - window_space_offset, height,
@@ -193,7 +193,7 @@ mod imp {
                         0, 0,
                         self.offset.get() as i32, self.buffer.height(),
                     )),
-                    ScalingFilter::Nearest,
+                    ScalingFilter::Linear,
                     &Rect::new(
                         width - window_space_offset, 0.0,
                         window_space_offset, height,

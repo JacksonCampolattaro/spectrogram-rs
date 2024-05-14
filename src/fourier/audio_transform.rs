@@ -1,5 +1,5 @@
 use crate::fourier::{Frequency, Period, StereoMagnitude};
-use ringbuf::HeapConsumer;
+use ringbuf::{HeapCons, traits::Consumer};
 
 pub trait AudioTransform {
     type Output;
@@ -11,7 +11,7 @@ pub trait AudioTransform {
 
 
 pub struct AudioStreamTransform<T: AudioTransform> {
-    pub input_stream: HeapConsumer<StereoMagnitude>,
+    pub input_stream: HeapCons<StereoMagnitude>,
     pub transform: T,
     // todo: interior mutability may be necessary here!
     pub stride: Period,
@@ -19,7 +19,7 @@ pub struct AudioStreamTransform<T: AudioTransform> {
 
 impl<T: AudioTransform> AudioStreamTransform<T> {
     pub fn new(
-        input_stream: HeapConsumer<StereoMagnitude>,
+        input_stream: HeapCons<StereoMagnitude>,
         transform: T,
         stride: Period,
     ) -> Self {

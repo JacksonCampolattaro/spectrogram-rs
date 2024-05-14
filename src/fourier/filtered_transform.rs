@@ -8,15 +8,16 @@ use fftw::types::{c32, Sign};
 use fftw::plan::{C2CPlan, C2CPlan32};
 use itertools::Itertools;
 use num_traits::{FloatConst, Zero};
-use ringbuf::{Consumer, HeapConsumer, HeapRb};
+use ringbuf::{HeapCons, HeapRb, traits::Consumer};
 use crate::fourier::{FFT_WINDOW_SIZE, FFT_WINDOW_STRIDE, NUM_FREQUENCIES, PADDED_FFT_WINDOW_SIZE, StereoMagnitude};
 use crate::fourier::interpolated_frequency_sample::{InterpolatedFrequencySample};
 
 use biquad::*;
 use std::ops::Range;
+use ringbuf::traits::Observer;
 
 pub struct FilteredStreamTransform {
-    receiver: RefCell<HeapConsumer<StereoMagnitude>>,
+    receiver: RefCell<HeapCons<StereoMagnitude>>,
     stream_config: Arc<Mutex<Option<StreamConfig>>>,
     plan: RefCell<C2CPlan32>,
     sender: Sender<InterpolatedFrequencySample>,
@@ -24,7 +25,7 @@ pub struct FilteredStreamTransform {
 
 impl FilteredStreamTransform {
     pub fn new(
-        sample_stream: HeapConsumer<StereoMagnitude>,
+        sample_stream: HeapCons<StereoMagnitude>,
         config: Arc<Mutex<Option<StreamConfig>>>,
         frequency_range: Range<Hertz<f32>>,
     ) -> (Self, Receiver<InterpolatedFrequencySample>) {
@@ -51,7 +52,7 @@ impl FilteredStreamTransform {
         let mut sample_stream = self.receiver.borrow_mut();
         let mut fft_plan = self.plan.borrow_mut();
 
-        while sample_stream.len() >= FFT_WINDOW_SIZE {
+        while sample_stream.occupied_len() >= FFT_WINDOW_SIZE {
 
             // The next window-length samples provide our input buffer
             let frame = sample_stream.iter().take(FFT_WINDOW_SIZE);

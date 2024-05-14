@@ -11,11 +11,11 @@ opt-level = 3
 
 [dependencies]
 adw = { version = "0.6.0", package = "libadwaita", features = ["v1_5"] }
-gtk = { version = "0.8.1", package = "gtk4", features = ["v4_14"] }
-cpal = "0.15.2"
+gtk = { version = "=0.8.1", package = "gtk4", features = ["v4_14"] }
+cpal = "0.15.3"
 fftw = "0.8.0"
-ringbuf = "0.3.3"
-ringbuf-blocking = "0.1.0-rc.2"
+ringbuf = "0.4.0"
+ringbuf-blocking = "0.1.0-rc.3"
 num-traits = "0.2.17"
 async-channel = "2.1.1"
 iter_num_tools = "0.7.1"
