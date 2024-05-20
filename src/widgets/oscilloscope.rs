@@ -37,7 +37,7 @@ impl Oscilloscope {
 mod imp {
     use super::*;
 
-    use glium::{implement_vertex, index::PrimitiveType, program, uniform, Frame, IndexBuffer, Surface, VertexBuffer, uniforms::UniformBuffer, implement_uniform_block, BlendingFunction, Blend};
+    use glium::{implement_vertex, index::PrimitiveType, program, uniform, Frame, Surface, VertexBuffer, uniforms::UniformBuffer, implement_uniform_block, BlendingFunction, Blend};
     use glium::Smooth::Nicest;
     use gtk::{glib, prelude::*, subclass::prelude::*};
     use itertools::Itertools;
@@ -56,114 +56,17 @@ mod imp {
     }
     implement_vertex!(Vertex, magnitude);
 
-    struct Renderer {
-        context: Rc<glium::backend::Context>,
-        index_buffer: IndexBuffer<u16>,
-        program: glium::Program,
-    }
-
-    impl Renderer {
-        fn new(context: Rc<glium::backend::Context>) -> Self {
-            // The following code is based on glium's triangle example:
-            // https://github.com/glium/glium/blob/2ff5a35f6b097889c154b42ad0233c6cdc6942f4/examples/triangle.rs
-            let index_buffer = IndexBuffer::new(
-                &context,
-                PrimitiveType::LineStrip,
-                (0u16..MAX_SAMPLES_PER_FRAME as u16).collect_vec().as_slice(),
-            ).unwrap();
-            let program = program!(
-                &context,
-                150 => {
-                    vertex: "
-                        #version 150
-                        uniform vec3 color;
-                        uniform uint num_samples;
-                        in float magnitude;
-                        void main() {
-                            float x = 2 * (float(gl_VertexID) / float(num_samples)) - 1;
-                            gl_Position = vec4(x, magnitude, 0.0, 1.0);
-                        }
-                    ",
-                    fragment: "
-                        #version 150
-                        uniform vec3 color;
-                        out vec4 f_color;
-                        void main() {
-                            f_color = vec4(color, 1.0);
-                        }
-                    "
-                },
-            ).unwrap();
-
-            Renderer {
-                context,
-                index_buffer,
-                program,
-            }
-        }
-
-        // Setting should be passed here
-        fn draw(&mut self, input_stream: &mut HeapCons<StereoMagnitude>) {
-            let num_samples = input_stream.occupied_len().min(MAX_SAMPLES_PER_FRAME);
-            if num_samples < MAX_SAMPLES_PER_FRAME * 75 / 100 {
-                return;
-            }
-
-            let start = Instant::now();
-            let mut frame = Frame::new(
-                self.context.clone(),
-                self.context.get_framebuffer_dimensions(),
-            );
-            let (left, right): (Vec<Vertex>, Vec<Vertex>) = input_stream.pop_iter()
-                .take(num_samples)
-                .map(|s| { (Vertex { magnitude: s.re }, Vertex { magnitude: s.im }) })
-                .unzip();
-
-            let params = glium::DrawParameters {
-                line_width: 2.0.into(), // todo: not supported on M1 mac?
-                smooth: Nicest.into(),
-                blend: Blend {
-                    color: BlendingFunction::Addition {
-                        source: glium::LinearBlendingFactor::One,
-                        destination: glium::LinearBlendingFactor::One,
-                    },
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            frame.clear_color(0., 0., 0., 0.);
-            frame.draw(
-                &VertexBuffer::new(&self.context, left.as_slice()).unwrap(),
-                &glium::index::NoIndices(PrimitiveType::LineStrip),
-                &self.program,
-                &uniform! {
-                    color: [0.5, 0.5, 1f32],
-                    num_samples: num_samples as u32 - 1
-                },
-                &params,
-            ).unwrap();
-            frame.draw(
-                &VertexBuffer::new(&self.context, right.as_slice()).unwrap(),
-                &glium::index::NoIndices(PrimitiveType::LineStrip),
-                &self.program,
-                &uniform! {
-                    color: [1.0, 0.5, 0.5f32],
-                    num_samples: num_samples as u32 - 1
-                },
-                &params,
-            ).unwrap();
-
-            frame.finish().unwrap();
-        }
-    }
-
     #[derive(Properties)]
     #[properties(wrapper_type = super::Oscilloscope)]
     pub struct Oscilloscope {
-        renderer: RefCell<Option<Renderer>>,
         #[property(name = "sample-rate", set = Self::set_sample_rate, type = u32)]
         pub input_stream: RefCell<HeapCons<StereoMagnitude>>,
+
+        #[property(get, set)]
+        pub palette: RefCell<ColorScheme>,
+
+        context: RefCell<Option<Rc<glium::backend::Context>>>,
+        program: RefCell<Option<glium::Program>>,
     }
 
     #[glib::object_subclass]
@@ -175,8 +78,10 @@ mod imp {
         fn new() -> Self {
             let (_, dummy_sample_stream) = HeapRb::new(1).split();
             Self {
-                renderer: None.into(),
                 input_stream: dummy_sample_stream.into(),
+                palette: ColorScheme::new_mono(colorous::MAGMA, "magma").into(),
+                context: None.into(),
+                program: None.into(),
             }
         }
     }
@@ -203,15 +108,45 @@ mod imp {
             // We will also ensure glium's context does not outlive the GdkGLContext by
             // destroying it in `unrealize()`.
             let context = unsafe {
-                glium::backend::Context::new(GLAreaBackend::from(widget.clone().upcast::<gtk::GLArea>()), true, Default::default())
+                let start = Instant::now();
+                let backend = GLAreaBackend::from(widget.clone().upcast::<gtk::GLArea>());
+                println!("backend: {:?}", start.elapsed());
+                let context = glium::backend::Context::new(backend, true, Default::default());
+                println!("total: {:?}", start.elapsed());
+                context
             }.unwrap();
 
-            // todo: set up buffers here, Renderer type is redundant
-            *self.renderer.borrow_mut() = Some(Renderer::new(context));
+            let program = program!(
+                &context,
+                150 => {
+                    vertex: "
+                        #version 150
+                        uniform vec3 color;
+                        uniform uint num_samples;
+                        in float magnitude;
+                        void main() {
+                            float x = 2 * (float(gl_VertexID) / float(num_samples)) - 1;
+                            gl_Position = vec4(x, magnitude, 0.0, 1.0);
+                        }
+                    ",
+                    fragment: "
+                        #version 150
+                        uniform vec3 color;
+                        out vec4 f_color;
+                        void main() {
+                            f_color = vec4(color, 1.0);
+                        }
+                    "
+                },
+            ).unwrap();
+
+            self.context.replace(Some(context));
+            self.program.replace(Some(program));
         }
 
         fn unrealize(&self) {
-            *self.renderer.borrow_mut() = None;
+            self.context.replace(None);
+            self.program.replace(None);
 
             self.parent_unrealize();
         }
@@ -219,17 +154,72 @@ mod imp {
 
     impl GLAreaImpl for Oscilloscope {
         fn render(&self, _context: &gtk::gdk::GLContext) -> glib::Propagation {
+            let num_samples = self.input_stream.borrow().occupied_len().min(MAX_SAMPLES_PER_FRAME);
+            if num_samples < MAX_SAMPLES_PER_FRAME * 75 / 100 {
+                return glib::Propagation::Proceed;
+            };
 
-            // todo: move samples to buffer
+            let context_binding = self.context.borrow();
+            let context = context_binding.as_ref().unwrap();
+            let program_binding = self.program.borrow();
+            let program = program_binding.as_ref().unwrap();
+            let palette = self.palette.borrow();
+            let (left_color, _) = palette.color_for(StereoMagnitude::new(1.0, 0.0));
+            let (right_color, _) = palette.color_for(StereoMagnitude::new(0.0, 1.0));
+            let bg_color = palette.background();
 
-            self.renderer.borrow_mut().as_mut().unwrap().draw(&mut self.input_stream.borrow_mut());
-            glib::Propagation::Stop
+            let mut frame = Frame::new(
+                context.clone(),
+                context.get_framebuffer_dimensions(),
+            );
+            let (left, right): (Vec<Vertex>, Vec<Vertex>) = self.input_stream.borrow_mut().pop_iter()
+                .take(num_samples)
+                .map(|s| { (Vertex { magnitude: s.re }, Vertex { magnitude: s.im }) })
+                .unzip();
+
+            let params = glium::DrawParameters {
+                line_width: 2.0.into(), // todo: not supported on M1 mac?
+                smooth: Nicest.into(),
+                blend: Blend {
+                    color: BlendingFunction::Addition {
+                        source: glium::LinearBlendingFactor::One,
+                        destination: glium::LinearBlendingFactor::One,
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            frame.clear_color(bg_color.r as f32 / 255.0, bg_color.g as f32 / 255.0, bg_color.b as f32 / 255.0, 1.);
+            frame.draw(
+                &VertexBuffer::new(context, left.as_slice()).unwrap(),
+                &glium::index::NoIndices(PrimitiveType::LineStrip),
+                program,
+                &uniform! {
+                    color: [left_color.r as f32 / 255.0, left_color.g as f32 / 255.0, left_color.b as f32 / 255.0],
+                    num_samples: num_samples as u32 - 1
+                },
+                &params,
+            ).unwrap();
+            frame.draw(
+                &VertexBuffer::new(context, right.as_slice()).unwrap(),
+                &glium::index::NoIndices(PrimitiveType::LineStrip),
+                &program,
+                &uniform! {
+                    color: [right_color.r as f32 / 255.0, right_color.g as f32 / 255.0, right_color.b as f32 / 255.0],
+                    num_samples: num_samples as u32 - 1
+                },
+                &params,
+            ).unwrap();
+
+            frame.finish().unwrap();
+            glib::Propagation::Proceed
         }
     }
 
     impl Oscilloscope {
         pub fn set_sample_rate(&self, sample_rate: u32) {
-            // todo!()
+            // This visualizer doesn't actually depend on the sample rate
         }
     }
 }

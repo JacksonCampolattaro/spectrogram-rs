@@ -102,9 +102,9 @@ fn build_ui(app: &adw::Application) {
         ))
         .build();
 
-    // // colorscheme_dropdown.bind_property("selected_item", &visualizer, "palette")
-    // //     .sync_create()
-    // //     .build();
+    colorscheme_dropdown.bind_property("selected_item", &visualizer, "palette")
+        .sync_create()
+        .build();
 
     let toolbar = adw::HeaderBar::builder()
         .vexpand(false)
