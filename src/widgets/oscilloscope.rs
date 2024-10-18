@@ -19,7 +19,8 @@ glib::wrapper! {
         @extends gtk::GLArea, gtk::Widget;
 }
 
-const MAX_SAMPLES_PER_FRAME: usize = 1024;
+const BUFFER_SIZE: usize = 4096 * 2;
+const MIN_SAMPLES_PER_FRAME: usize = 128;
 
 impl Oscilloscope {
     pub fn new(sample_stream: HeapCons<StereoMagnitude>) -> Oscilloscope {
@@ -35,10 +36,12 @@ impl Oscilloscope {
 }
 
 mod imp {
+    use std::cmp::min;
+    use std::ops::Deref;
     use super::*;
 
     use glium::{implement_vertex, index::PrimitiveType, program, uniform, Frame, Surface, VertexBuffer, uniforms::UniformBuffer, implement_uniform_block, BlendingFunction, Blend};
-    use glium::Smooth::Nicest;
+    use glium::Smooth::{Fastest, Nicest};
     use gtk::{glib, prelude::*, subclass::prelude::*};
     use itertools::Itertools;
     use num_traits::pow;
@@ -48,11 +51,10 @@ mod imp {
     use crate::colorscheme::ColorScheme;
     use crate::fourier::fft::FastFourierTransform;
     use crate::fourier::{Frequency, StereoMagnitude};
-    use crate::widgets::oscilloscope::{MAX_SAMPLES_PER_FRAME};
 
     #[derive(Copy, Clone)]
     struct Vertex {
-        magnitude: f32,
+        magnitude: [f32; 2],
     }
     implement_vertex!(Vertex, magnitude);
 
@@ -67,6 +69,8 @@ mod imp {
 
         context: RefCell<Option<Rc<glium::backend::Context>>>,
         program: RefCell<Option<glium::Program>>,
+        buffer: RefCell<Option<VertexBuffer<Vertex>>>,
+        ring_index: RefCell<usize>,
     }
 
     #[glib::object_subclass]
@@ -82,6 +86,8 @@ mod imp {
                 palette: ColorScheme::new_mono(colorous::MAGMA, "magma").into(),
                 context: None.into(),
                 program: None.into(),
+                buffer: None.into(),
+                ring_index: 0.into(),
             }
         }
     }
@@ -108,11 +114,8 @@ mod imp {
             // We will also ensure glium's context does not outlive the GdkGLContext by
             // destroying it in `unrealize()`.
             let context = unsafe {
-                let start = Instant::now();
                 let backend = GLAreaBackend::from(widget.clone().upcast::<gtk::GLArea>());
-                println!("backend: {:?}", start.elapsed());
                 let context = glium::backend::Context::new(backend, true, Default::default());
-                println!("total: {:?}", start.elapsed());
                 context
             }.unwrap();
 
@@ -123,10 +126,15 @@ mod imp {
                         #version 150
                         uniform vec3 color;
                         uniform uint num_samples;
-                        in float magnitude;
+                        uniform uint ring_index;
+                        uniform uint channel;
+                        in vec2 magnitude;
                         void main() {
                             float x = 2 * (float(gl_VertexID) / float(num_samples)) - 1;
-                            gl_Position = vec4(x, magnitude, 0.0, 1.0);
+                            float m = magnitude[channel];
+                            // if (int(ring_index) == 0)
+                            //     m = 1;
+                            gl_Position = vec4(x, m, 0.0, 1.0);
                         }
                     ",
                     fragment: "
@@ -140,8 +148,14 @@ mod imp {
                 },
             ).unwrap();
 
+            let buffer = VertexBuffer::dynamic(
+                &context,
+                &vec![Vertex { magnitude: [0f32, 0f32] }; BUFFER_SIZE],
+            ).unwrap();
+
             self.context.replace(Some(context));
             self.program.replace(Some(program));
+            self.buffer.replace(Some(buffer));
         }
 
         fn unrealize(&self) {
@@ -153,11 +167,13 @@ mod imp {
     }
 
     impl GLAreaImpl for Oscilloscope {
-        fn render(&self, _context: &gtk::gdk::GLContext) -> glib::Propagation {
-            let num_samples = self.input_stream.borrow().occupied_len().min(MAX_SAMPLES_PER_FRAME);
-            if num_samples < MAX_SAMPLES_PER_FRAME * 75 / 100 {
-                return glib::Propagation::Proceed;
-            };
+        fn render(&self, _context: &gdk::GLContext) -> glib::Propagation {
+
+            // let start_time = std::time::Instant::now();
+            // let num_samples = self.input_stream.borrow().occupied_len().min(BUFFER_SIZE);
+            // if num_samples < MIN_SAMPLES_PER_FRAME {
+            //     return glib::Propagation::Proceed;
+            // };
 
             let context_binding = self.context.borrow();
             let context = context_binding.as_ref().unwrap();
@@ -167,19 +183,39 @@ mod imp {
             let (left_color, _) = palette.color_for(StereoMagnitude::new(1.0, 0.0));
             let (right_color, _) = palette.color_for(StereoMagnitude::new(0.0, 1.0));
             let bg_color = palette.background();
+            let mut buffer_binding = self.buffer.borrow_mut();
+            let buffer = buffer_binding.as_mut().unwrap();
 
             let mut frame = Frame::new(
                 context.clone(),
                 context.get_framebuffer_dimensions(),
             );
-            let (left, right): (Vec<Vertex>, Vec<Vertex>) = self.input_stream.borrow_mut().pop_iter()
-                .take(num_samples)
-                .map(|s| { (Vertex { magnitude: s.re }, Vertex { magnitude: s.im }) })
-                .unzip();
+
+            // todo: this isn't a great way of doing this
+            let buffer_size = buffer.len();
+            {
+                let mut write_map = buffer.map_write();
+                for sample in self.input_stream.borrow_mut().pop_iter() {
+                    let current_index = *self.ring_index.borrow();
+                    write_map.set(current_index, Vertex { magnitude: [sample.re, sample.im] });
+                    *self.ring_index.borrow_mut() = (current_index + 1) % buffer_size;
+                }
+            }
+            // while !self.input_stream.borrow().is_empty() {
+            //     let current_index: usize = *self.ring_index.borrow();
+            //     let remaining_space = buffer_size - current_index;
+            //     let new_samples: Vec<_> = self.input_stream.borrow_mut().pop_iter()
+            //         .take(remaining_space)
+            //         .map(|s| { Vertex { magnitude: [s.re, s.im] } })
+            //         .collect();
+            //     buffer.slice(current_index..(current_index + new_samples.len())).unwrap()
+            //         .write(new_samples.as_slice());
+            //     *self.ring_index.borrow_mut() = (current_index + new_samples.len()) % buffer_size;
+            // }
 
             let params = glium::DrawParameters {
-                line_width: 2.0.into(), // todo: not supported on M1 mac?
-                smooth: Nicest.into(),
+                line_width: 2.0.into(),
+                smooth: Fastest.into(),
                 blend: Blend {
                     color: BlendingFunction::Addition {
                         source: glium::LinearBlendingFactor::One,
@@ -192,27 +228,32 @@ mod imp {
 
             frame.clear_color(bg_color.r as f32 / 255.0, bg_color.g as f32 / 255.0, bg_color.b as f32 / 255.0, 1.);
             frame.draw(
-                &VertexBuffer::new(context, left.as_slice()).unwrap(),
+                &*buffer,
                 &glium::index::NoIndices(PrimitiveType::LineStrip),
                 program,
                 &uniform! {
                     color: [left_color.r as f32 / 255.0, left_color.g as f32 / 255.0, left_color.b as f32 / 255.0],
-                    num_samples: num_samples as u32 - 1
+                    num_samples: buffer_size as u32 - 1,
+                    ring_index: *self.ring_index.borrow() as u32,
+                    channel: 0u32
                 },
                 &params,
             ).unwrap();
             frame.draw(
-                &VertexBuffer::new(context, right.as_slice()).unwrap(),
+                &*buffer,
                 &glium::index::NoIndices(PrimitiveType::LineStrip),
                 &program,
                 &uniform! {
                     color: [right_color.r as f32 / 255.0, right_color.g as f32 / 255.0, right_color.b as f32 / 255.0],
-                    num_samples: num_samples as u32 - 1
+                    num_samples: buffer_size as u32 - 1,
+                    ring_index: *self.ring_index.borrow() as u32,
+                    channel: 1u32
                 },
                 &params,
             ).unwrap();
 
             frame.finish().unwrap();
+            //println!("{:?}", start_time.elapsed());
             glib::Propagation::Proceed
         }
     }

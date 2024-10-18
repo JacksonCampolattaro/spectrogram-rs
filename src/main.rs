@@ -8,7 +8,8 @@ use adw::prelude::AdwApplicationExt;
 use async_channel;
 use cpal::{ChannelCount, SampleRate};
 use cpal::traits::{DeviceTrait, StreamTrait};
-use gtk::{DropDown, glib, Align, RevealerTransitionType, Overlay};
+use gtk::{DropDown, glib, Align, RevealerTransitionType, Overlay, GraphicsOffload};
+use gtk::ffi::GtkGraphicsOffload;
 use gtk::prelude::*;
 use itertools::Itertools;
 
@@ -20,6 +21,7 @@ use crate::colorscheme::*;
 use crate::fourier::interpolated_frequency_sample::InterpolatedFrequencySample;
 use crate::fourier::StereoMagnitude;
 use crate::widgets::oscilloscope::Oscilloscope;
+use crate::widgets::gpu_spectrogram::GPUSpectrogram;
 use crate::widgets::placeholder::PlaceholderVisualizer;
 
 mod fourier;
@@ -76,6 +78,8 @@ fn build_ui(app: &adw::Application) {
     let visualizer = Oscilloscope::new(sample_receiver);
     // let visualizer = PlaceholderVisualizer::new(sample_receiver);
     input_list.bind_property("sample-rate", &visualizer, "sample-rate").build();
+    let offloaded_visualizer = GraphicsOffload::new((&visualizer).into());
+    offloaded_visualizer.set_black_background(true);
 
     // Use a dropdown to select inputs
     let input_dropdown = DropDown::builder()
@@ -135,7 +139,7 @@ fn build_ui(app: &adw::Application) {
 
     // Use an overlay so the toolbar can overlap the content
     let overlay = Overlay::builder()
-        .child(&visualizer)
+        .child(&offloaded_visualizer)
         .build();
     overlay.add_overlay(&revealer);
 

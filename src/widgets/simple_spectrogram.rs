@@ -4,6 +4,13 @@ use ringbuf::{HeapCons, HeapRb, traits::Split};
 use async_channel::Receiver;
 use plotters::coord::types::RangedCoordf32;
 use std::cell::Cell;
+use adw::gdk::RGBA;
+use gtk::graphene::Rect;
+use gtk::gsk::ScalingFilter;
+use gtk::prelude::SnapshotExt;
+use plotters::coord::ReverseCoordTranslate;
+use plotters::prelude::Cartesian2d;
+use crate::fourier::{FrequencySample, Period};
 
 use adw::{glib, glib::{Properties, Object}, gdk::gdk_pixbuf::{Pixbuf, Colorspace}, prelude::ObjectExt, subclass::prelude::{ObjectImpl, WidgetImpl, ObjectSubclass, DerivedObjectProperties}, gdk};
 use adw;
@@ -47,19 +54,11 @@ impl SimpleSpectrogram {
 }
 
 mod imp {
-    use adw::gdk::RGBA;
-    use gtk::graphene::Rect;
-    use gtk::gsk::ScalingFilter;
-    use gtk::prelude::SnapshotExt;
-    use plotters::coord::ReverseCoordTranslate;
-    use plotters::prelude::Cartesian2d;
-    use crate::fourier::{FrequencySample, Period};
     use super::*;
 
     #[derive(Properties)]
     #[properties(wrapper_type = super::SimpleSpectrogram)]
     pub struct SimpleSpectrogram {
-
         // Appearance settings
         pub x_range: RangedCoordf32,
         pub y_range: LogCoordf64,
