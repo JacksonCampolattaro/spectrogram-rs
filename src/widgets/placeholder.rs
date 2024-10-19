@@ -4,7 +4,7 @@ use adw::glib;
 use adw::glib::{Object, Properties, ControlFlow::Continue};
 use gtk::subclass::button::ButtonImpl;
 use adw::subclass::prelude::{ObjectImpl, ObjectSubclass, ObjectSubclassExt, ObjectSubclassIsExt, WidgetImpl, WidgetImplExt, DerivedObjectProperties};
-use gtk::prelude::{WidgetExtManual, ObjectExt};
+use gtk::prelude::{WidgetExtManual, ObjectExt, ButtonExt};
 use itertools::Itertools;
 
 use crate::fourier::StereoMagnitude;
@@ -20,7 +20,7 @@ impl PlaceholderVisualizer {
         let imp = imp::PlaceholderVisualizer::from_obj(&object);
         object.add_tick_callback(|w, _| {
             let v = w.imp().input_stream.borrow_mut().pop_iter().collect_vec();
-            println!("{}", v.len());
+            w.set_label(format!("{}", v.len()).as_str());
             Continue
         });
         imp.input_stream.replace(sample_stream);
@@ -29,6 +29,7 @@ impl PlaceholderVisualizer {
 }
 
 mod imp {
+    use crate::colorscheme::ColorScheme;
     use super::*;
 
     #[derive(Properties)]
@@ -36,6 +37,9 @@ mod imp {
     pub struct PlaceholderVisualizer {
         #[property(name = "sample-rate", set = Self::set_sample_rate, type = u32)]
         pub input_stream: RefCell<HeapCons<StereoMagnitude>>,
+
+        #[property(get, set)]
+        pub palette: RefCell<ColorScheme>,
     }
 
     #[glib::object_subclass]
@@ -46,7 +50,10 @@ mod imp {
 
         fn new() -> Self {
             let (_, dummy_sample_stream) = HeapRb::new(1).split();
-            Self { input_stream: dummy_sample_stream.into() }
+            Self {
+                input_stream: dummy_sample_stream.into(),
+                palette: ColorScheme::new_mono(colorous::MAGMA, "magma").into(),
+            }
         }
     }
 

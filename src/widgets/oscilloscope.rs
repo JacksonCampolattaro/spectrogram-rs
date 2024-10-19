@@ -19,7 +19,7 @@ glib::wrapper! {
         @extends gtk::GLArea, gtk::Widget;
 }
 
-const BUFFER_SIZE: usize = 4096 * 2;
+const BUFFER_SIZE: usize = 4096 * 4;
 const MIN_SAMPLES_PER_FRAME: usize = 128;
 
 impl Oscilloscope {
@@ -42,6 +42,8 @@ mod imp {
 
     use glium::{implement_vertex, index::PrimitiveType, program, uniform, Frame, Surface, VertexBuffer, uniforms::UniformBuffer, implement_uniform_block, BlendingFunction, Blend};
     use glium::Smooth::{Fastest, Nicest};
+    use glium::texture::{ClientFormat, PixelValue, Texture1d};
+    use glium::texture::CompressedTexture1d;
     use gtk::{glib, prelude::*, subclass::prelude::*};
     use itertools::Itertools;
     use num_traits::pow;
@@ -70,6 +72,7 @@ mod imp {
         context: RefCell<Option<Rc<glium::backend::Context>>>,
         program: RefCell<Option<glium::Program>>,
         buffer: RefCell<Option<VertexBuffer<Vertex>>>,
+        texture: RefCell<Option<Texture1d>>,
         ring_index: RefCell<usize>,
     }
 
@@ -87,6 +90,7 @@ mod imp {
                 context: None.into(),
                 program: None.into(),
                 buffer: None.into(),
+                texture: None.into(),
                 ring_index: 0.into(),
             }
         }
@@ -130,11 +134,9 @@ mod imp {
                         uniform uint channel;
                         in vec2 magnitude;
                         void main() {
-                            float x = 2 * (float(gl_VertexID) / float(num_samples)) - 1;
-                            float m = magnitude[channel];
-                            // if (int(ring_index) == 0)
-                            //     m = 1;
-                            gl_Position = vec4(x, m, 0.0, 1.0);
+                            int index = (int(num_samples) + gl_VertexID - int(ring_index)) % int(num_samples);
+                            float x = 2 * (float(index) / float(num_samples)) - 1;
+                            gl_Position = vec4(x, magnitude[channel], 0.0, 1.0);
                         }
                     ",
                     fragment: "
@@ -151,6 +153,11 @@ mod imp {
             let buffer = VertexBuffer::dynamic(
                 &context,
                 &vec![Vertex { magnitude: [0f32, 0f32] }; BUFFER_SIZE],
+            ).unwrap();
+
+            let texture = Texture1d::new(
+                &context,
+                vec![(0f32, 0f32); BUFFER_SIZE],
             ).unwrap();
 
             self.context.replace(Some(context));
@@ -180,8 +187,8 @@ mod imp {
             let program_binding = self.program.borrow();
             let program = program_binding.as_ref().unwrap();
             let palette = self.palette.borrow();
-            let (left_color, _) = palette.color_for(StereoMagnitude::new(1.0, 0.0));
-            let (right_color, _) = palette.color_for(StereoMagnitude::new(0.0, 1.0));
+            let (left_color, _) = palette.color_for((1.0, 0.0));
+            let (right_color, _) = palette.color_for((0.0, 1.0));
             let bg_color = palette.background();
             let mut buffer_binding = self.buffer.borrow_mut();
             let buffer = buffer_binding.as_mut().unwrap();
@@ -195,9 +202,9 @@ mod imp {
             let buffer_size = buffer.len();
             {
                 let mut write_map = buffer.map_write();
-                for sample in self.input_stream.borrow_mut().pop_iter() {
+                for (l, r) in self.input_stream.borrow_mut().pop_iter() {
                     let current_index = *self.ring_index.borrow();
-                    write_map.set(current_index, Vertex { magnitude: [sample.re, sample.im] });
+                    write_map.set(current_index, Vertex { magnitude: [l, r] });
                     *self.ring_index.borrow_mut() = (current_index + 1) % buffer_size;
                 }
             }
@@ -217,10 +224,7 @@ mod imp {
                 line_width: 2.0.into(),
                 smooth: Fastest.into(),
                 blend: Blend {
-                    color: BlendingFunction::Addition {
-                        source: glium::LinearBlendingFactor::One,
-                        destination: glium::LinearBlendingFactor::One,
-                    },
+                    color: BlendingFunction::Max,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -254,7 +258,7 @@ mod imp {
 
             frame.finish().unwrap();
             //println!("{:?}", start_time.elapsed());
-            glib::Propagation::Proceed
+            glib::Propagation::Stop
         }
     }
 

@@ -10,6 +10,7 @@ use gtk::{
     subclass::prelude::*,
 };
 use colorous::*;
+use fftw::types::c32;
 use crate::fourier::StereoMagnitude;
 
 const MIN_DB: f32 = -70.0;
@@ -51,11 +52,11 @@ impl ColorScheme {
         }
     }
 
-    pub fn color_for(&self, magnitude: StereoMagnitude) -> (Color, f32) {
+    pub fn color_for(&self, (l, r): StereoMagnitude) -> (Color, f32) {
         let imp = imp::ColorScheme::from_obj(self);
         let background = imp.background.get();
 
-        let total_magnitude = magnitude.norm_sqr();
+        let total_magnitude = c32::new(l, r).norm_sqr();
         let magnitude_db = 10.0 * (total_magnitude + 1e-7).log10();
         let magnitude_bounded = (magnitude_db - MIN_DB) / (MAX_DB - MIN_DB);
 
@@ -63,7 +64,7 @@ impl ColorScheme {
             (imp.gradient.get().eval_continuous(magnitude_bounded as f64), 1.0)
         } else {
             // If a background is provided, the foreground is based on a diverging gradient
-            let left_right_distribution = magnitude.re as f64 / magnitude.l1_norm() as f64;
+            let left_right_distribution = l as f64 / c32::new(l, r).l1_norm() as f64;
             (imp.gradient.get().eval_continuous(left_right_distribution), magnitude_bounded)
         }
     }

@@ -3,7 +3,7 @@ use std::iter::zip;
 use cpal::SampleRate;
 use fftw::array::AlignedVec;
 use fftw::plan::{C2CPlan, C2CPlan32};
-use fftw::types::Sign;
+use fftw::types::{c32, Sign};
 use itertools::Itertools;
 use num_traits::{FloatConst, Zero};
 
@@ -54,6 +54,8 @@ impl AudioTransform for FastFourierTransform {
                 samples_processed += 1;
                 s
             })
+            // Convert to complex numbers
+            .map(|(l, r)| c32::new(*l, *r))
             // Apply a Hann window function
             .enumerate()
             .map(|(i, v)| {
@@ -61,7 +63,7 @@ impl AudioTransform for FastFourierTransform {
                 v * scale
             })
             // Pad to increase the output resolution
-            .pad_using(padded_window_size, |_| StereoMagnitude::zero());
+            .pad_using(padded_window_size, |_| c32::zero());
 
         // Write the processed data to the input buffer
         let mut sample_buffer = AlignedVec::new(padded_window_size);
@@ -79,21 +81,22 @@ impl AudioTransform for FastFourierTransform {
         // https://web.archive.org/web/20180312110051/http://www.engineeringproductivitytools.com/stuff/T0001/PT10.HTM
         let real_frequencies = frequency_buffer.iter().skip(1).take(num_frequencies);
         let imaginary_frequencies = frequency_buffer.iter().rev().take(num_frequencies);
-        let frequencies = zip(real_frequencies, imaginary_frequencies)
-            .map(|(a, b)| StereoMagnitude::new(
+        let magnitudes = zip(real_frequencies, imaginary_frequencies)
+            .map(|(a, b)| c32::new(
                 // note: we can simplify the equations because we're only finding magnitude!
+                // eventually, it may make sense to keep track of phase, too
                 (a + b.conj()).norm() / 2.0,
                 (a - b.conj()).norm() / 2.0,
             ));
 
         // Apply postprocessing
         let scale = 2.0 / window_size as f32;
-        let frequencies = frequencies
+        let magnitudes = magnitudes
             .map(|m| m * scale);
 
         // Produce a frequency-domain sample from the output of the FFT
         Some(InterpolatedFrequencySample::new(
-            frequencies,
+            magnitudes,
             SampleRate { 0: self.sample_rate as u32 },
         ))
     }

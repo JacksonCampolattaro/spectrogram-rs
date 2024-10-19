@@ -65,10 +65,10 @@ impl AudioInputListModel {
             config.as_ref().unwrap(),
             move |data: &[f32], _| {
                 if channels == 1 {
-                    let mut mono_expanded = data.iter().map(|s| StereoMagnitude::new(*s, *s));
+                    let mut mono_expanded = data.iter().map(|s| (*s, *s));
                     sender.lock().unwrap().push_iter(&mut mono_expanded);
                 } else if channels == 2 {
-                    let mut stereo_expanded = data.iter().tuples().map(|(l, r)| StereoMagnitude::new(*l, *r));
+                    let mut stereo_expanded = data.iter().tuples().map(|(l, r)| (*l, *r));
                     sender.lock().unwrap().push_iter(&mut stereo_expanded);
                 } else {
                     eprintln!("{}-channel input not supported!", channels);
@@ -129,7 +129,7 @@ mod imp {
                 config: Arc::new(None.into()),
                 sender: Arc::new(dummy_sender.into()),
                 devices,
-                sample_rate: 0.into()
+                sample_rate: 0.into(),
             }
         }
     }

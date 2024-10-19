@@ -1,28 +1,19 @@
 use std::ptr;
-use std::sync::{Arc, Mutex};
 
 use adw::ColorScheme;
 use adw::glib::clone;
-use adw::glib::ControlFlow::Continue;
 use adw::prelude::AdwApplicationExt;
 use async_channel;
-use cpal::{ChannelCount, SampleRate};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use gtk::{DropDown, glib, Align, RevealerTransitionType, Overlay, GraphicsOffload};
-use gtk::ffi::GtkGraphicsOffload;
 use gtk::prelude::*;
 use itertools::Itertools;
 
-use widgets::{simple_spectrogram::SimpleSpectrogram, spectrogram::Spectrogram};
 use devices::audio_device::AudioDevice;
 use devices::audio_input_list_model::AudioInputListModel;
 
 use crate::colorscheme::*;
-use crate::fourier::interpolated_frequency_sample::InterpolatedFrequencySample;
-use crate::fourier::StereoMagnitude;
 use crate::widgets::oscilloscope::Oscilloscope;
-use crate::widgets::gpu_spectrogram::GPUSpectrogram;
-use crate::widgets::placeholder::PlaceholderVisualizer;
 
 mod fourier;
 mod widgets;
@@ -75,8 +66,8 @@ fn build_ui(app: &adw::Application) {
     let (input_list, sample_receiver) = AudioInputListModel::new();
 
     // Create a visualizer for the data coming from input list
-    let visualizer = Oscilloscope::new(sample_receiver);
     // let visualizer = PlaceholderVisualizer::new(sample_receiver);
+    let visualizer = Oscilloscope::new(sample_receiver);
     input_list.bind_property("sample-rate", &visualizer, "sample-rate").build();
     let offloaded_visualizer = GraphicsOffload::new((&visualizer).into());
     offloaded_visualizer.set_black_background(true);
