@@ -75,6 +75,7 @@ impl FrequencySample for InterpolatedFrequencySample {
     }
 }
 
+#[allow(dead_code)]
 fn cosine_interpolate(data: &[c32], index: f32) -> StereoMagnitude {
     let low = index.floor() as usize;
     let high = (index.ceil() as usize).clamp(low + 1, data.len() - 1);
@@ -84,6 +85,7 @@ fn cosine_interpolate(data: &[c32], index: f32) -> StereoMagnitude {
     (interpolated.re, interpolated.im)
 }
 
+#[allow(dead_code)]
 fn cubic_interpolate(data: &[c32], index: f32) -> StereoMagnitude {
     // Adapted from: https://paulbourke.net/miscellaneous/interpolation/
     let mu = index - index.floor();

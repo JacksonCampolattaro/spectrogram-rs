@@ -1413,19 +1413,16 @@ dependencies = [
 [[package]]
 name = "glium"
 version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94d5813c960a54b76e20fe4ef7e54fbeb12545776a11ecf14f42a946a1c65964"
+source = "git+https://github.com/awused/glium.git?branch=bad-idea#f63aa99c11a1425457b29a2710ddce29bb92b369"
 dependencies = [
  "backtrace",
  "fnv",
  "gl_generator 0.14.0",
  "glutin",
  "glutin-winit",
- "lazy_static 1.4.0",
  "memoffset",
  "raw-window-handle 0.5.2",
  "smallvec",
- "takeable-option",
  "winit",
 ]
 
@@ -2824,12 +2821,6 @@ dependencies = [
  "toml",
  "version-compare 0.2.0",
 ]
-
-[[package]]
-name = "takeable-option"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36ae8932fcfea38b7d3883ae2ab357b0d57a02caaa18ebb4f5ece08beaec4aa0"
 
 [[package]]
 name = "target-lexicon"

@@ -13,6 +13,8 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 use adw::glib::Properties;
 use cpal::SampleRate;
+use gtk::subclass::prelude::ObjectSubclassIsExt;
+use ringbuf::traits::Observer;
 
 glib::wrapper! {
     pub struct Oscilloscope(ObjectSubclass<imp::Oscilloscope>)
@@ -20,7 +22,6 @@ glib::wrapper! {
 }
 
 const BUFFER_SIZE: usize = 4096 * 4;
-const MIN_SAMPLES_PER_FRAME: usize = 128;
 
 impl Oscilloscope {
     pub fn new(sample_stream: HeapCons<StereoMagnitude>) -> Oscilloscope {
@@ -28,7 +29,9 @@ impl Oscilloscope {
         let imp = imp::Oscilloscope::from_obj(&object);
         imp.input_stream.replace(sample_stream);
         object.add_tick_callback(|oscilloscope, _| {
-            oscilloscope.queue_draw();
+            if !oscilloscope.imp().input_stream.borrow().is_empty() {
+                oscilloscope.queue_draw();
+            }
             Continue
         });
         object
@@ -40,25 +43,17 @@ mod imp {
     use std::ops::Deref;
     use super::*;
 
-    use glium::{implement_vertex, index::PrimitiveType, program, uniform, Frame, Surface, VertexBuffer, uniforms::UniformBuffer, implement_uniform_block, BlendingFunction, Blend};
+    use glium::{index::PrimitiveType, program, uniform, Frame, Surface, BlendingFunction, Blend, Texture2d};
     use glium::Smooth::{Fastest, Nicest};
-    use glium::texture::{ClientFormat, PixelValue, Texture1d};
-    use glium::texture::CompressedTexture1d;
+    use glium::texture::{MipmapsOption, UncompressedFloatFormat};
+    use glium::uniforms::{MagnifySamplerFilter, MinifySamplerFilter, SamplerWrapFunction};
     use gtk::{glib, prelude::*, subclass::prelude::*};
     use itertools::Itertools;
-    use num_traits::pow;
     use ringbuf::{HeapCons, HeapRb};
     use ringbuf::traits::Observer;
     use ringbuf_blocking::traits::Consumer;
     use crate::colorscheme::ColorScheme;
-    use crate::fourier::fft::FastFourierTransform;
-    use crate::fourier::{Frequency, StereoMagnitude};
-
-    #[derive(Copy, Clone)]
-    struct Vertex {
-        magnitude: [f32; 2],
-    }
-    implement_vertex!(Vertex, magnitude);
+    use crate::fourier::{StereoMagnitude};
 
     #[derive(Properties)]
     #[properties(wrapper_type = super::Oscilloscope)]
@@ -71,8 +66,7 @@ mod imp {
 
         context: RefCell<Option<Rc<glium::backend::Context>>>,
         program: RefCell<Option<glium::Program>>,
-        buffer: RefCell<Option<VertexBuffer<Vertex>>>,
-        texture: RefCell<Option<Texture1d>>,
+        texture: RefCell<Option<Texture2d>>,
         ring_index: RefCell<usize>,
     }
 
@@ -89,7 +83,6 @@ mod imp {
                 palette: ColorScheme::new_mono(colorous::MAGMA, "magma").into(),
                 context: None.into(),
                 program: None.into(),
-                buffer: None.into(),
                 texture: None.into(),
                 ring_index: 0.into(),
             }
@@ -132,10 +125,13 @@ mod imp {
                         uniform uint num_samples;
                         uniform uint ring_index;
                         uniform uint channel;
-                        in vec2 magnitude;
+                        uniform sampler2D tex;
                         void main() {
-                            int index = (int(num_samples) + gl_VertexID - int(ring_index)) % int(num_samples);
-                            float x = 2 * (float(index) / float(num_samples)) - 1;
+                            int index = gl_VertexID + int(ring_index);
+                            vec2 uv = vec2(float(index) / float(num_samples), 0.0);
+                            vec2 magnitude = texture(tex, uv).rg;
+                            float x = 2.0 * (float(gl_VertexID) / float(num_samples)) - 1.0;
+                            //gl_Position = vec4(x, uv.x, 0.0, 1.0);
                             gl_Position = vec4(x, magnitude[channel], 0.0, 1.0);
                         }
                     ",
@@ -150,19 +146,16 @@ mod imp {
                 },
             ).unwrap();
 
-            let buffer = VertexBuffer::dynamic(
+            let texture = Texture2d::empty_with_format(
                 &context,
-                &vec![Vertex { magnitude: [0f32, 0f32] }; BUFFER_SIZE],
-            ).unwrap();
-
-            let texture = Texture1d::new(
-                &context,
-                vec![(0f32, 0f32); BUFFER_SIZE],
+                UncompressedFloatFormat::F32F32,
+                MipmapsOption::NoMipmap,
+                BUFFER_SIZE as u32, 1
             ).unwrap();
 
             self.context.replace(Some(context));
             self.program.replace(Some(program));
-            self.buffer.replace(Some(buffer));
+            self.texture.replace(Some(texture));
         }
 
         fn unrealize(&self) {
@@ -175,13 +168,8 @@ mod imp {
 
     impl GLAreaImpl for Oscilloscope {
         fn render(&self, _context: &gdk::GLContext) -> glib::Propagation {
-
-            // let start_time = std::time::Instant::now();
-            // let num_samples = self.input_stream.borrow().occupied_len().min(BUFFER_SIZE);
-            // if num_samples < MIN_SAMPLES_PER_FRAME {
-            //     return glib::Propagation::Proceed;
-            // };
-
+            let mut stream_binding = self.input_stream.borrow_mut();
+            let stream = stream_binding.as_mut();
             let context_binding = self.context.borrow();
             let context = context_binding.as_ref().unwrap();
             let program_binding = self.program.borrow();
@@ -190,35 +178,41 @@ mod imp {
             let (left_color, _) = palette.color_for((1.0, 0.0));
             let (right_color, _) = palette.color_for((0.0, 1.0));
             let bg_color = palette.background();
-            let mut buffer_binding = self.buffer.borrow_mut();
-            let buffer = buffer_binding.as_mut().unwrap();
+            let mut texture_binding = self.texture.borrow_mut();
+            let texture = texture_binding.as_mut().unwrap();
+
+            // Rebind textures that may have been clobbered by a bug elsewhere
+            // (see: https://github.com/glium/glium/issues/2106)
+            unsafe {
+                // fixme: might not be necessary, a dummy texture might be enough to avoid the bug
+                // (see: https://github.com/glium/glium/issues/2106)
+                context.exec_with_context(|c| {
+                    c.state.texture_units.iter_mut().for_each(|t| *t = Default::default());
+                    epoxy::ActiveTexture(epoxy::TEXTURE0 + c.state.active_texture);
+                });
+            };
+
 
             let mut frame = Frame::new(
                 context.clone(),
                 context.get_framebuffer_dimensions(),
             );
 
-            // todo: this isn't a great way of doing this
-            let buffer_size = buffer.len();
-            {
-                let mut write_map = buffer.map_write();
-                for (l, r) in self.input_stream.borrow_mut().pop_iter() {
-                    let current_index = *self.ring_index.borrow();
-                    write_map.set(current_index, Vertex { magnitude: [l, r] });
-                    *self.ring_index.borrow_mut() = (current_index + 1) % buffer_size;
-                }
+            while !stream.is_empty() {
+                let current_index = *self.ring_index.borrow();
+                let remaining_space = texture.width() as usize - current_index;
+                let new_samples: Vec<_> = stream.pop_iter()
+                    .take(remaining_space)
+                    .collect();
+                let block_size = new_samples.len();
+                texture.write(glium::Rect {
+                    left: current_index as u32,
+                    bottom: 0,
+                    width: block_size as u32,
+                    height: 1,
+                }, vec![new_samples]);
+                *self.ring_index.borrow_mut() = (current_index + block_size) % texture.width() as usize;
             }
-            // while !self.input_stream.borrow().is_empty() {
-            //     let current_index: usize = *self.ring_index.borrow();
-            //     let remaining_space = buffer_size - current_index;
-            //     let new_samples: Vec<_> = self.input_stream.borrow_mut().pop_iter()
-            //         .take(remaining_space)
-            //         .map(|s| { Vertex { magnitude: [s.re, s.im] } })
-            //         .collect();
-            //     buffer.slice(current_index..(current_index + new_samples.len())).unwrap()
-            //         .write(new_samples.as_slice());
-            //     *self.ring_index.borrow_mut() = (current_index + new_samples.len()) % buffer_size;
-            // }
 
             let params = glium::DrawParameters {
                 line_width: 2.0.into(),
@@ -229,29 +223,35 @@ mod imp {
                 },
                 ..Default::default()
             };
+            let sampler = texture.sampled()
+                .wrap_function(SamplerWrapFunction::Repeat)
+                .magnify_filter(MagnifySamplerFilter::Nearest)
+                .minify_filter(MinifySamplerFilter::Nearest);
 
             frame.clear_color(bg_color.r as f32 / 255.0, bg_color.g as f32 / 255.0, bg_color.b as f32 / 255.0, 1.);
             frame.draw(
-                &*buffer,
+                glium::vertex::EmptyVertexAttributes { len: BUFFER_SIZE },
                 &glium::index::NoIndices(PrimitiveType::LineStrip),
                 program,
                 &uniform! {
                     color: [left_color.r as f32 / 255.0, left_color.g as f32 / 255.0, left_color.b as f32 / 255.0],
-                    num_samples: buffer_size as u32 - 1,
+                    num_samples: texture.width(),
                     ring_index: *self.ring_index.borrow() as u32,
-                    channel: 0u32
+                    channel: 0u32,
+                    tex: sampler,
                 },
                 &params,
             ).unwrap();
             frame.draw(
-                &*buffer,
+                glium::vertex::EmptyVertexAttributes { len: BUFFER_SIZE },
                 &glium::index::NoIndices(PrimitiveType::LineStrip),
                 &program,
                 &uniform! {
                     color: [right_color.r as f32 / 255.0, right_color.g as f32 / 255.0, right_color.b as f32 / 255.0],
-                    num_samples: buffer_size as u32 - 1,
+                    num_samples: texture.width(),
                     ring_index: *self.ring_index.borrow() as u32,
-                    channel: 1u32
+                    channel: 1u32,
+                    tex: sampler
                 },
                 &params,
             ).unwrap();
