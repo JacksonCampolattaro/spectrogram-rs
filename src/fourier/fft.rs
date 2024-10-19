@@ -35,7 +35,7 @@ impl FastFourierTransform {
 }
 
 impl AudioTransform for FastFourierTransform {
-    type Output = InterpolatedFrequencySample;
+    type Output = Vec<StereoMagnitude>;
 
     fn sample_rate(&self) -> Frequency { self.sample_rate }
 
@@ -91,13 +91,11 @@ impl AudioTransform for FastFourierTransform {
 
         // Apply postprocessing
         let scale = 2.0 / window_size as f32;
-        let magnitudes = magnitudes
-            .map(|m| m * scale);
-
-        // Produce a frequency-domain sample from the output of the FFT
-        Some(InterpolatedFrequencySample::new(
-            magnitudes,
-            SampleRate { 0: self.sample_rate as u32 },
-        ))
+        Some(
+            magnitudes
+                .map(|m| m * scale)
+                .map(|m| (m.re, m.im))
+                .collect()
+        )
     }
 }

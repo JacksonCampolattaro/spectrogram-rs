@@ -16,12 +16,12 @@ use cpal::SampleRate;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 use ringbuf::traits::Observer;
 
+const BUFFER_SIZE: usize = 1024 * 16;
+
 glib::wrapper! {
     pub struct Oscilloscope(ObjectSubclass<imp::Oscilloscope>)
         @extends gtk::GLArea, gtk::Widget;
 }
-
-const BUFFER_SIZE: usize = 4096 * 4;
 
 impl Oscilloscope {
     pub fn new(sample_stream: HeapCons<StereoMagnitude>) -> Oscilloscope {
@@ -67,7 +67,7 @@ mod imp {
         context: RefCell<Option<Rc<glium::backend::Context>>>,
         program: RefCell<Option<glium::Program>>,
         texture: RefCell<Option<Texture2d>>,
-        ring_index: RefCell<usize>,
+        offset: Cell<usize>,
     }
 
     #[glib::object_subclass]
@@ -84,7 +84,7 @@ mod imp {
                 context: None.into(),
                 program: None.into(),
                 texture: None.into(),
-                ring_index: 0.into(),
+                offset: 0.into(),
             }
         }
     }
@@ -192,14 +192,13 @@ mod imp {
                 });
             };
 
-
             let mut frame = Frame::new(
                 context.clone(),
                 context.get_framebuffer_dimensions(),
             );
 
             while !stream.is_empty() {
-                let current_index = *self.ring_index.borrow();
+                let current_index = self.offset.get();
                 let remaining_space = texture.width() as usize - current_index;
                 let new_samples: Vec<_> = stream.pop_iter()
                     .take(remaining_space)
@@ -211,7 +210,7 @@ mod imp {
                     width: block_size as u32,
                     height: 1,
                 }, vec![new_samples]);
-                *self.ring_index.borrow_mut() = (current_index + block_size) % texture.width() as usize;
+                self.offset.set((current_index + block_size) % texture.width() as usize);
             }
 
             let params = glium::DrawParameters {
@@ -223,6 +222,7 @@ mod imp {
                 },
                 ..Default::default()
             };
+
             let sampler = texture.sampled()
                 .wrap_function(SamplerWrapFunction::Repeat)
                 .magnify_filter(MagnifySamplerFilter::Nearest)
@@ -236,7 +236,7 @@ mod imp {
                 &uniform! {
                     color: [left_color.r as f32 / 255.0, left_color.g as f32 / 255.0, left_color.b as f32 / 255.0],
                     num_samples: texture.width(),
-                    ring_index: *self.ring_index.borrow() as u32,
+                    ring_index: self.offset.get() as u32,
                     channel: 0u32,
                     tex: sampler,
                 },
@@ -249,7 +249,7 @@ mod imp {
                 &uniform! {
                     color: [right_color.r as f32 / 255.0, right_color.g as f32 / 255.0, right_color.b as f32 / 255.0],
                     num_samples: texture.width(),
-                    ring_index: *self.ring_index.borrow() as u32,
+                    ring_index: self.offset.get() as u32,
                     channel: 1u32,
                     tex: sampler
                 },

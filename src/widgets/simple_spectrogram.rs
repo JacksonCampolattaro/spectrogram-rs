@@ -54,6 +54,10 @@ impl SimpleSpectrogram {
 }
 
 mod imp {
+    use std::ops::Deref;
+    use cpal::SampleRate;
+    use crate::fourier::audio_transform::AudioTransform;
+    use crate::fourier::interpolated_frequency_sample::InterpolatedFrequencySample;
     use super::*;
 
     #[derive(Properties)]
@@ -128,7 +132,11 @@ mod imp {
                 (0..buffer.width(), 0..buffer.height()),
             );
 
+            let sample_rate = self.fft.borrow().transform.sample_rate();
             for frequency_sample in self.fft.borrow_mut().process() {
+                let frequency_sample = InterpolatedFrequencySample::new(
+                    frequency_sample, SampleRate(sample_rate as u32)
+                );
                 let px = self.offset.get();
                 for py in 0..buffer.height() {
                     let (_, f0) = cartesian_range.reverse_translate((buffer.width() - 1, py)).unwrap();

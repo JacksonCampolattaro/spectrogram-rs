@@ -14,9 +14,9 @@ pub struct InterpolatedFrequencySample {
 
 impl InterpolatedFrequencySample {
     pub fn new<I>(magnitudes: I, sample_rate: SampleRate) -> Self
-        where I: IntoIterator<Item=c32> {
+        where I: IntoIterator<Item=StereoMagnitude> {
         InterpolatedFrequencySample {
-            magnitudes: magnitudes.into_iter().collect(),
+            magnitudes: magnitudes.into_iter().map(|(l, r)| c32::new(l, r)).collect(),
             sample_rate,
         }
     }

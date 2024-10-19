@@ -60,12 +60,13 @@ impl ColorScheme {
         let magnitude_db = 10.0 * (total_magnitude + 1e-7).log10();
         let magnitude_bounded = (magnitude_db - MIN_DB) / (MAX_DB - MIN_DB);
 
-        if background.is_none() {
-            (imp.gradient.get().eval_continuous(magnitude_bounded as f64), 1.0)
-        } else {
+        if background.is_some() {
             // If a background is provided, the foreground is based on a diverging gradient
             let left_right_distribution = l as f64 / c32::new(l, r).l1_norm() as f64;
             (imp.gradient.get().eval_continuous(left_right_distribution), magnitude_bounded)
+        } else {
+            // Otherwise, this must be a mono color scheme
+            (imp.gradient.get().eval_continuous(magnitude_bounded as f64), 1.0)
         }
     }
 }
