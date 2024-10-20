@@ -56,9 +56,13 @@ impl ColorScheme {
         let imp = imp::ColorScheme::from_obj(self);
         let background = imp.background.get();
 
-        let total_magnitude = c32::new(l, r).norm_sqr();
-        let magnitude_db = 10.0 * (total_magnitude + 1e-7).log10();
+        let magnitude_power = c32::new(l, r).norm_sqr();
+        let magnitude_db = 10.0 * (magnitude_power + 1e-7).log10();
         let magnitude_bounded = (magnitude_db - MIN_DB) / (MAX_DB - MIN_DB);
+
+        if magnitude_bounded > 1.0f32 {
+            return (Color { r: 255, g: 255, b: 255 }, 1.0);
+        }
 
         if background.is_some() {
             // If a background is provided, the foreground is based on a diverging gradient
@@ -68,6 +72,26 @@ impl ColorScheme {
             // Otherwise, this must be a mono color scheme
             (imp.gradient.get().eval_continuous(magnitude_bounded as f64), 1.0)
         }
+    }
+
+    pub fn lookup_table(&self, resolution: usize) -> Vec<Vec<(f32, f32, f32, f32)>> {
+        let imp = imp::ColorScheme::from_obj(self);
+        let background = imp.background.get();
+        let mut table = vec![vec![(0f32, 0f32, 0f32, 0f32); resolution]; resolution];
+        for i in 0..resolution {
+            for j in 0..resolution {
+                let magnitude = i as f32 / (resolution - 1) as f32;
+                let pan = 1.0f32 - (j as f32 / (resolution - 1) as f32);
+                table[i][j] = if background.is_some() {
+                    let color = imp.gradient.get().eval_continuous(pan as f64);
+                    (color.r as f32 / 256f32, color.g as f32 / 256f32, color.b as f32 / 256f32, magnitude)
+                } else {
+                    let color = imp.gradient.get().eval_continuous(magnitude as f64);
+                    (color.r as f32 / 256f32, color.g as f32 / 256f32, color.b as f32 / 256f32, 1.0)
+                };
+            }
+        }
+        table
     }
 }
 

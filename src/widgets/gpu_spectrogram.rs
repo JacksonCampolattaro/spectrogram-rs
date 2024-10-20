@@ -134,6 +134,7 @@ mod imp {
                         uniform uint num_samples;
                         uniform uint offset;
                         uniform sampler2D tex;
+                        uniform sampler2D palette;
                         out vec4 f_color;
                         void main() {
 
@@ -160,14 +161,20 @@ mod imp {
 
                             // Get magnitude
                             vec2 magnitude = texture(tex, coord.yx).rg;
-                            float magnitude_power = dot(magnitude, magnitude);
 
                             // Convert to decibels
+                            float magnitude_power = dot(magnitude, magnitude);
                             float magnitude_log = 10 * log(magnitude_power + 1e-7) / log(10);
                             float magnitude_db = (magnitude_log + 70) / (-10 + 70);
 
-                            // Set color
-                            f_color = vec4(magnitude_db, magnitude_db, magnitude_db, 1.0);
+                            // Determine left/right panning
+                            float pan = magnitude.y / (magnitude.x + magnitude.y);
+
+                            // Get the appropriate color for this magnitude
+                            f_color = texture(palette, vec2(pan, magnitude_db));
+
+                            // Debugging
+                            //f_color = texture(palette, uv);
 
                         }
                     "
@@ -223,7 +230,7 @@ mod imp {
                 context.get_framebuffer_dimensions(),
             );
 
-            // todo: copy over data
+            // Copy over new data
             let mut stream = fft.process();
             loop {
                 let current_index = self.offset.get();
@@ -246,23 +253,33 @@ mod imp {
                 self.offset.set((current_index + block_size) % texture.height() as usize);
             }
 
+            // Prepare a texture which provides a lookup table for the color scheme
+            // fixme: don't do this every frame!
+            let palette_table = Texture2d::with_format(
+                context,
+                palette.lookup_table(32),
+                UncompressedFloatFormat::F32F32F32F32,
+                MipmapsOption::NoMipmap, // todo: are mipmaps necessary?
+            ).unwrap();
+
 
             let params = glium::DrawParameters {
                 line_width: 2.0.into(),
                 smooth: Nicest.into(),
-                blend: Blend {
-                    color: BlendingFunction::Max,
-                    ..Default::default()
-                },
+                blend: Blend::alpha_blending(),
                 ..Default::default()
             };
 
             let sampler = texture.sampled()
                 .wrap_function(SamplerWrapFunction::Repeat)
                 .magnify_filter(MagnifySamplerFilter::Linear)
+                .minify_filter(MinifySamplerFilter::LinearMipmapLinear);
+            let palette_sampler = palette_table.sampled()
+                .wrap_function(SamplerWrapFunction::Clamp)
+                .magnify_filter(MagnifySamplerFilter::Linear)
                 .minify_filter(MinifySamplerFilter::Linear);
 
-            frame.clear_color(bg_color.r as f32 / 255.0, bg_color.g as f32 / 255.0, bg_color.b as f32 / 255.0, 1.);
+            frame.clear_color(bg_color.r as f32 / 255.0, bg_color.g as f32 / 255.0, bg_color.b as f32 / 255.0, 1.0);
             frame.draw(
                 glium::vertex::EmptyVertexAttributes { len: 3 },
                 &glium::index::NoIndices(PrimitiveType::TrianglesList),
@@ -270,7 +287,8 @@ mod imp {
                 &uniform! {
                     num_samples: texture.height(),
                     offset: self.offset.get() as u32,
-                    tex: sampler
+                    tex: sampler,
+                    palette: palette_sampler,
                     // todo: pass offset
                 },
                 &params,
