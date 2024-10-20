@@ -121,7 +121,6 @@ mod imp {
                 150 => {
                     vertex: "
                         #version 150
-                        uniform vec3 color;
                         uniform uint num_samples;
                         uniform uint ring_index;
                         uniform uint channel;
@@ -216,10 +215,7 @@ mod imp {
             let params = glium::DrawParameters {
                 line_width: 2.0.into(),
                 smooth: Fastest.into(),
-                blend: Blend {
-                    color: BlendingFunction::Max,
-                    ..Default::default()
-                },
+                blend: Blend::alpha_blending(),
                 ..Default::default()
             };
 
@@ -257,7 +253,6 @@ mod imp {
             ).unwrap();
 
             frame.finish().unwrap();
-            //println!("{:?}", start_time.elapsed());
             glib::Propagation::Stop
         }
     }

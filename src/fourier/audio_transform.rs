@@ -5,6 +5,7 @@ pub trait AudioTransform {
     type Output;
 
     fn sample_rate(&self) -> Frequency;
+    fn num_input_samples(&self) -> usize;
 
     fn process<'a>(&mut self, samples: impl IntoIterator<Item=&'a StereoMagnitude>) -> Option<Self::Output>;
 }

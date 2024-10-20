@@ -60,10 +60,6 @@ impl ColorScheme {
         let magnitude_db = 10.0 * (magnitude_power + 1e-7).log10();
         let magnitude_bounded = (magnitude_db - MIN_DB) / (MAX_DB - MIN_DB);
 
-        if magnitude_bounded > 1.0f32 {
-            return (Color { r: 255, g: 255, b: 255 }, 1.0);
-        }
-
         if background.is_some() {
             // If a background is provided, the foreground is based on a diverging gradient
             let left_right_distribution = l as f64 / c32::new(l, r).l1_norm() as f64;
