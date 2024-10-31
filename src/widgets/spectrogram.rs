@@ -93,7 +93,7 @@ mod imp {
             self.parent_constructed();
             self.obj().put(
                 self.spectrogram.borrow().deref(),
-                0.0, 0.0
+                0.0, 0.0,
             )
             // todo
         }

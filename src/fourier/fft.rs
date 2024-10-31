@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::iter::zip;
-use cpal::SampleRate;
 use fftw::array::AlignedVec;
 use fftw::plan::{C2CPlan, C2CPlan32};
 use fftw::types::{c32, Sign};
@@ -8,8 +6,7 @@ use itertools::Itertools;
 use num_traits::{FloatConst, Zero};
 
 use crate::fourier::audio_transform::AudioTransform;
-use crate::fourier::interpolated_frequency_sample::InterpolatedFrequencySample;
-use crate::fourier::{Period, Frequency, StereoMagnitude, PADDED_FFT_WINDOW_SIZE};
+use crate::fourier::{Period, Frequency, StereoMagnitude};
 
 pub struct FastFourierTransform {
     plan: C2CPlan32,

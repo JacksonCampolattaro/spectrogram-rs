@@ -1,5 +1,4 @@
 use std::ops::Range;
-use fftw::types::c32;
 
 pub mod interpolated_frequency_sample;
 pub mod fft;

@@ -3,8 +3,6 @@ use std::ptr;
 use adw::ColorScheme;
 use adw::glib::clone;
 use adw::prelude::AdwApplicationExt;
-use async_channel;
-use cpal::traits::{DeviceTrait, StreamTrait};
 use gtk::{DropDown, glib, Align, RevealerTransitionType, Overlay, GraphicsOffload};
 use gtk::prelude::*;
 use itertools::Itertools;
@@ -15,6 +13,7 @@ use devices::audio_input_list_model::AudioInputListModel;
 use crate::colorscheme::*;
 use crate::widgets::gpu_spectrogram::GPUSpectrogram;
 use crate::widgets::oscilloscope::Oscilloscope;
+use crate::widgets::simple_spectrogram::SimpleSpectrogram;
 
 mod fourier;
 mod widgets;
@@ -68,6 +67,7 @@ fn build_ui(app: &adw::Application) {
 
     // Create a visualizer for the data coming from input list
     let visualizer = GPUSpectrogram::new(sample_receiver);
+    // let visualizer = SimpleSpectrogram::new(sample_receiver);
     // let visualizer = PlaceholderVisualizer::new(sample_receiver);
     // let visualizer = Oscilloscope::new(sample_receiver);
     input_list.bind_property("sample-rate", &visualizer, "sample-rate").build();

@@ -13,7 +13,7 @@ use ringbuf_blocking::traits::Consumer;
 
 use crate::fourier::{Frequency, Period, StereoMagnitude, fft::FastFourierTransform, audio_transform::AudioStreamTransform};
 
-use glium::{implement_vertex, index::PrimitiveType, program, uniform, Frame, Surface, VertexBuffer, uniforms::UniformBuffer, implement_uniform_block, BlendingFunction, Blend, Smooth::Nicest};
+use glium::{index::PrimitiveType, program, uniform, Frame, Surface, Blend, Smooth::Nicest};
 
 use crate::colorscheme::ColorScheme;
 use crate::widgets::glarea_backend::GLAreaBackend;
