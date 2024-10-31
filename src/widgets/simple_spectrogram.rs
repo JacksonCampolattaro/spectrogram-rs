@@ -1,27 +1,35 @@
 use std::sync::{Arc, Mutex};
 use std::cell::RefCell;
-use ringbuf::{HeapConsumer, HeapRb};
+use ringbuf::{HeapCons, HeapRb, traits::Split};
 use async_channel::Receiver;
 use plotters::coord::types::RangedCoordf32;
+use std::cell::Cell;
+use adw::gdk::RGBA;
+use gtk::graphene::Rect;
+use gtk::gsk::ScalingFilter;
+use gtk::prelude::SnapshotExt;
+use plotters::coord::ReverseCoordTranslate;
+use plotters::prelude::Cartesian2d;
+use crate::fourier::{FrequencySample, Period};
 
 use adw::{glib, glib::{Properties, Object}, gdk::gdk_pixbuf::{Pixbuf, Colorspace}, prelude::ObjectExt, subclass::prelude::{ObjectImpl, WidgetImpl, ObjectSubclass, DerivedObjectProperties}, gdk};
 use adw;
 use adw::gdk::Texture;
+use adw::glib::ControlFlow::Continue;
 use adw::prelude::BinExt;
 use adw::subclass::prelude::ObjectSubclassExt;
 use cpal::StreamConfig;
 use gtk::{ContentFit, Picture};
-use gtk::prelude::{WidgetExt};
+use gtk::prelude::{WidgetExt, WidgetExtManual};
 
 use crate::{
     colorscheme::ColorScheme,
-    fourier::interpolated_frequency_sample::InterpolatedFrequencySample,
-    fourier::transform::StreamTransform,
     log_scaling::{LogCoordf64, IntoReversibleLogRange},
     fourier::Frequency,
+    fourier::fft::FastFourierTransform,
+    fourier::audio_transform::AudioStreamTransform,
 };
 use crate::fourier::StereoMagnitude;
-use crate::widgets::spectrogram::Spectrogram;
 
 const TEXTURE_WIDTH: i32 = 1024;
 const TEXTURE_HEIGHT: i32 = 1024;
@@ -32,23 +40,24 @@ glib::wrapper! {
 }
 
 impl SimpleSpectrogram {
-    pub fn new(sample_stream: HeapConsumer<StereoMagnitude>, stream_config: Arc<Mutex<Option<StreamConfig>>>) -> SimpleSpectrogram {
+    pub fn new(sample_stream: HeapCons<StereoMagnitude>) -> SimpleSpectrogram {
         let object = Object::builder().build();
         let imp = imp::SimpleSpectrogram::from_obj(&object);
-        let (fft, frequency_stream) = StreamTransform::new(sample_stream, stream_config);
-        imp.fft.replace(fft);
-        imp.frequency_stream.replace(frequency_stream);
+        imp.fft.borrow_mut().input_stream = sample_stream;
+        object.add_tick_callback(|spectrogram, _| {
+            // todo: only draw if there are unprocessed samples!
+            spectrogram.queue_draw();
+            Continue
+        });
         object
     }
 }
 
 mod imp {
-    use adw::gdk::RGBA;
-    use gtk::gsk::ScalingFilter;
-    use gtk::prelude::SnapshotExt;
-    use plotters::coord::ReverseCoordTranslate;
-    use plotters::prelude::Cartesian2d;
-    use crate::fourier::FrequencySample;
+    use std::ops::Deref;
+    use cpal::SampleRate;
+    use crate::fourier::audio_transform::AudioTransform;
+    use crate::fourier::interpolated_frequency_sample::InterpolatedFrequencySample;
     use super::*;
 
     #[derive(Properties)]
@@ -62,10 +71,12 @@ mod imp {
 
         // Plot buffer
         pub buffer: Pixbuf,
+        offset: Cell<usize>,
 
-        // Preprocessing details
-        pub fft: RefCell<StreamTransform>,
-        pub frequency_stream: RefCell<Receiver<InterpolatedFrequencySample>>,
+        // FFT parameters
+        #[property(name = "sample-rate", set = Self::set_sample_rate, type = u32)]
+        pub fft: RefCell<AudioStreamTransform<FastFourierTransform>>,
+        // todo: period, stride, etc.
     }
 
     #[glib::object_subclass]
@@ -80,23 +91,24 @@ mod imp {
                 true,
                 8,
                 TEXTURE_WIDTH, TEXTURE_HEIGHT,
-            ).unwrap();
-            let palette: RefCell<ColorScheme> = ColorScheme::new_mono(colorous::MAGMA, "magma").into();
-            let color = palette.borrow().background();
-            let color = u32::from_be_bytes([color.r, color.g, color.b, 255]);
-            buffer.fill(color);
+            );
+            let palette = ColorScheme::new_mono(colorous::MAGMA, "magma");
 
             let (_, dummy_sample_stream) = HeapRb::new(1).split();
-            let (dummy_fft, dummy_frequency_stream) =
-                StreamTransform::new(dummy_sample_stream, Arc::new(None.into()));
+
+            let fft = AudioStreamTransform::new(
+                dummy_sample_stream,
+                FastFourierTransform::new(100 as Frequency, 1 as Period),
+                2.0 / TEXTURE_WIDTH as f32, // todo: this should be defined as an elapsed time!
+            );
 
             Self {
                 x_range: (-10.0..0.0).into(),
                 y_range: (32.0..22030.0).reversible_log_scale().base(2.0).zero_point(0.0).into(),
-                palette,
-                buffer,
-                fft: dummy_fft.into(),
-                frequency_stream: dummy_frequency_stream.into(),
+                palette: palette.into(),
+                buffer: buffer.unwrap(),
+                offset: 0.into(),
+                fft: fft.into(),
             }
         }
     }
@@ -106,75 +118,35 @@ mod imp {
 
     impl WidgetImpl for SimpleSpectrogram {
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
-            let width = self.obj().width() as u32;
-            let height = self.obj().height() as u32;
-            if width == 0 || height == 0 {
-                return;
-            }
-            let bounds = gtk::graphene::Rect::new(
-                0.0, 0.0,
-                width as f32, height as f32,
-            );
-
-            // Make sure there are no unprocessed audio samples
-            self.fft.borrow().process();
+            let width = self.obj().width() as f32;
+            let height = self.obj().height() as f32;
+            if width == 0.0 || height == 0.0 { return; }
 
             // Render the frequency stream to the buffer
-            self.render();
-
-            let background_color = self.palette.borrow().background();
-            snapshot.append_color(
-                &RGBA::new(
-                    background_color.r as f32 / 255.0,
-                    background_color.g as f32 / 255.0,
-                    background_color.b as f32 / 255.0,
-                    1.0,
-                ),
-                &bounds,
-            );
-            snapshot.append_scaled_texture(
-                &Texture::for_pixbuf(&self.buffer),
-                ScalingFilter::Nearest,
-                &bounds,
-            );
-        }
-    }
-
-    impl SimpleSpectrogram {
-        pub fn render(&self) {
             let start_time = std::time::Instant::now();
             let buffer = &self.buffer;
-            let frequency_stream = self.frequency_stream.borrow();
-
-            // Shift the buffer over to make room for new data
-            let num_samples = frequency_stream.len();
-            buffer.copy_area(
-                num_samples as i32, 0,
-                buffer.width() - num_samples as i32, buffer.height(),
-                buffer,
-                0, 0,
-            );
-            println!("Shifted buffer in {:.2?}", start_time.elapsed());
 
             let cartesian_range: Cartesian2d<RangedCoordf32, LogCoordf64> = Cartesian2d::new(
                 self.x_range.clone(),
                 self.y_range.clone(),
                 (0..buffer.width(), 0..buffer.height()),
             );
-            for px in 0..num_samples {
-                // todo: should this really be blocking?
-                let sample = frequency_stream.recv_blocking().unwrap();
 
+            let sample_rate = self.fft.borrow().transform.sample_rate();
+            for frequency_sample in self.fft.borrow_mut().process() {
+                let frequency_sample = InterpolatedFrequencySample::new(
+                    frequency_sample, SampleRate(sample_rate as u32)
+                );
+                let px = self.offset.get();
                 for py in 0..buffer.height() {
                     let (_, f0) = cartesian_range.reverse_translate((buffer.width() - 1, py)).unwrap();
                     let (_, f1) = cartesian_range.reverse_translate((buffer.width() - 1, py + 1)).unwrap();
 
                     let frequency_range = (f0 as Frequency)..(f1 as Frequency);
 
-                    let magnitude = sample.magnitude_in(frequency_range);
+                    let magnitude = frequency_sample.magnitude_in(frequency_range);
                     // let magnitude = to_scaled_decibels(&magnitude);
 
-                    let px = (buffer.width() - num_samples as i32) + px as i32;
                     let py = buffer.height() - py - 1;
 
                     let (color, alpha) = self.palette.borrow().color_for(magnitude);
@@ -187,8 +159,63 @@ mod imp {
                         (alpha * 255.0) as u8,
                     );
                 }
+
+                // Update the offset
+                self.offset.set((px + 1) % self.buffer.width() as usize);
             }
-            println!("Rendered {} samples in {:.2?}", num_samples, start_time.elapsed());
+
+            // Draw the background
+            let window_bounds = Rect::new(0.0, 0.0, width, height);
+            let background_color = self.palette.borrow().background();
+            snapshot.append_color(
+                &RGBA::new(
+                    background_color.r as f32 / 255.0,
+                    background_color.g as f32 / 255.0,
+                    background_color.b as f32 / 255.0,
+                    1.0,
+                ),
+                &window_bounds,
+            );
+
+            // Swap the sides of the oscilloscope buffer, turning it into a scrolling view
+            let window_space_offset = width * (self.offset.get() as f32 / TEXTURE_WIDTH as f32);
+            if (self.buffer.width() - self.offset.get() as i32) > 0 {
+                // If the right side has nonzero width; place it on the left
+                snapshot.append_scaled_texture(
+                    &Texture::for_pixbuf(&self.buffer.new_subpixbuf(
+                        self.offset.get() as i32, 0,
+                        self.buffer.width() - self.offset.get() as i32, self.buffer.height(),
+                    )),
+                    ScalingFilter::Linear,
+                    &Rect::new(
+                        0.0, 0.0,
+                        width - window_space_offset, height,
+                    ),
+                );
+            };
+            if self.offset.get() > 0 {
+                // If the left side has nonzero width; place it on the right
+                snapshot.append_scaled_texture(
+                    &Texture::for_pixbuf(&self.buffer.new_subpixbuf(
+                        0, 0,
+                        self.offset.get() as i32, self.buffer.height(),
+                    )),
+                    ScalingFilter::Linear,
+                    &Rect::new(
+                        width - window_space_offset, 0.0,
+                        window_space_offset, height,
+                    ),
+                );
+            };
+        }
+    }
+
+    impl SimpleSpectrogram {
+        pub fn set_sample_rate(&self, sample_rate: u32) {
+            self.fft.borrow_mut().transform = FastFourierTransform::new(
+                sample_rate as Frequency,
+                0.05, // todo: this should be configurable!
+            )
         }
     }
 }

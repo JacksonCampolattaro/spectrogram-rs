@@ -1,9 +1,9 @@
 use std::ops::Range;
 use fftw::types::c32;
 
-pub mod transform;
 pub mod interpolated_frequency_sample;
-mod fast_frequency_sample;
+pub mod fft;
+pub mod audio_transform;
 
 const FFT_WINDOW_SIZE: usize = 2048;
 const PADDED_FFT_WINDOW_SIZE: usize = FFT_WINDOW_SIZE * 2;
@@ -11,7 +11,7 @@ const FFT_WINDOW_STRIDE: usize = 128;
 const NUM_FREQUENCIES: usize = 1 + (PADDED_FFT_WINDOW_SIZE / 2);
 
 
-pub type StereoMagnitude = c32;
+pub type StereoMagnitude = (f32, f32);
 pub type Period = f32;
 pub type Frequency = f32;
 

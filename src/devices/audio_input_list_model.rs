@@ -6,14 +6,15 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gtk::{
     glib,
     glib::*,
+    glib::property::*,
     subclass::prelude::*,
     gio::ListModel,
+    prelude::*,
 };
-use ringbuf::{HeapRb, HeapProducer, HeapConsumer};
+use ringbuf::{HeapRb, HeapProd, HeapCons, traits::{Producer, Split}};
 use crate::fourier::StereoMagnitude;
 use crate::devices::audio_device::AudioDevice;
 use std::sync::{Arc, Mutex};
-use colorous::Color;
 
 
 glib::wrapper! {
@@ -22,7 +23,7 @@ glib::wrapper! {
 }
 
 impl AudioInputListModel {
-    pub fn new() -> (AudioInputListModel, HeapConsumer<StereoMagnitude>) {
+    pub fn new() -> (AudioInputListModel, HeapCons<StereoMagnitude>) {
         let object = Object::builder().build();
         let imp = imp::AudioInputListModel::from_obj(&object);
 
@@ -49,6 +50,8 @@ impl AudioInputListModel {
         *config = device.as_ref().default_input_config().unwrap().config().into();
         let channels = config.as_ref().unwrap().channels;
         let sample_rate = config.as_ref().unwrap().sample_rate;
+        imp.sample_rate.replace(sample_rate.0);
+        self.notify_sample_rate();
         println!(
             "Listening to device: {} ({}Hz, {}ch)",
             device.name().unwrap(),
@@ -61,12 +64,11 @@ impl AudioInputListModel {
         *stream = device.build_input_stream(
             config.as_ref().unwrap(),
             move |data: &[f32], _| {
-                //println!("Received {} samples", data.len());
                 if channels == 1 {
-                    let mut mono_expanded = data.iter().map(|s| StereoMagnitude::new(*s, *s));
+                    let mut mono_expanded = data.iter().map(|s| (*s, *s));
                     sender.lock().unwrap().push_iter(&mut mono_expanded);
                 } else if channels == 2 {
-                    let mut stereo_expanded = data.iter().tuples().map(|(l, r)| StereoMagnitude::new(*l, *r));
+                    let mut stereo_expanded = data.iter().tuples().map(|(l, r)| (*l, *r));
                     sender.lock().unwrap().push_iter(&mut stereo_expanded);
                 } else {
                     eprintln!("{}-channel input not supported!", channels);
@@ -94,12 +96,17 @@ impl AudioInputListModel {
 mod imp {
     use super::*;
 
+    #[derive(Properties)]
+    #[properties(wrapper_type = super::AudioInputListModel)]
     pub struct AudioInputListModel {
         devices: Vec<Rc<cpal::Device>>,
         pub _host: cpal::Host,
         pub stream: Arc<Mutex<Option<Stream>>>,
         pub config: Arc<Mutex<Option<StreamConfig>>>,
-        pub sender: Arc<Mutex<HeapProducer<StereoMagnitude>>>,
+        pub sender: Arc<Mutex<HeapProd<StereoMagnitude>>>,
+
+        #[property(get)]
+        pub sample_rate: RefCell<u32>,
     }
 
     #[glib::object_subclass]
@@ -122,10 +129,12 @@ mod imp {
                 config: Arc::new(None.into()),
                 sender: Arc::new(dummy_sender.into()),
                 devices,
+                sample_rate: 0.into(),
             }
         }
     }
 
+    #[glib::derived_properties]
     impl ObjectImpl for AudioInputListModel {}
 
     impl ListModelImpl for AudioInputListModel {

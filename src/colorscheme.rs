@@ -10,6 +10,7 @@ use gtk::{
     subclass::prelude::*,
 };
 use colorous::*;
+use fftw::types::c32;
 use crate::fourier::StereoMagnitude;
 
 const MIN_DB: f32 = -70.0;
@@ -51,21 +52,42 @@ impl ColorScheme {
         }
     }
 
-    pub fn color_for(&self, magnitude: StereoMagnitude) -> (Color, f32) {
+    pub fn color_for(&self, (l, r): StereoMagnitude) -> (Color, f32) {
         let imp = imp::ColorScheme::from_obj(self);
         let background = imp.background.get();
 
-        let total_magnitude = magnitude.norm_sqr();
-        let magnitude_db = 10.0 * (total_magnitude + 1e-7).log10();
+        let magnitude_power = c32::new(l, r).norm_sqr();
+        let magnitude_db = 10.0 * (magnitude_power + 1e-7).log10();
         let magnitude_bounded = (magnitude_db - MIN_DB) / (MAX_DB - MIN_DB);
 
-        if background.is_none() {
-            (imp.gradient.get().eval_continuous(magnitude_bounded as f64), 1.0)
-        } else {
+        if background.is_some() {
             // If a background is provided, the foreground is based on a diverging gradient
-            let left_right_distribution = magnitude.re as f64 / magnitude.l1_norm() as f64;
+            let left_right_distribution = l as f64 / c32::new(l, r).l1_norm() as f64;
             (imp.gradient.get().eval_continuous(left_right_distribution), magnitude_bounded)
+        } else {
+            // Otherwise, this must be a mono color scheme
+            (imp.gradient.get().eval_continuous(magnitude_bounded as f64), 1.0)
         }
+    }
+
+    pub fn lookup_table(&self, resolution: usize) -> Vec<Vec<(f32, f32, f32, f32)>> {
+        let imp = imp::ColorScheme::from_obj(self);
+        let background = imp.background.get();
+        let mut table = vec![vec![(0f32, 0f32, 0f32, 0f32); resolution]; resolution];
+        for i in 0..resolution {
+            for j in 0..resolution {
+                let magnitude = i as f32 / (resolution - 1) as f32;
+                let pan = 1.0f32 - (j as f32 / (resolution - 1) as f32);
+                table[i][j] = if background.is_some() {
+                    let color = imp.gradient.get().eval_continuous(pan as f64);
+                    (color.r as f32 / 256f32, color.g as f32 / 256f32, color.b as f32 / 256f32, magnitude)
+                } else {
+                    let color = imp.gradient.get().eval_continuous(magnitude as f64);
+                    (color.r as f32 / 256f32, color.g as f32 / 256f32, color.b as f32 / 256f32, 1.0)
+                };
+            }
+        }
+        table
     }
 }
 

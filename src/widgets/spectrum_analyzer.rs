@@ -1,4 +1,5 @@
 use std::iter::{zip};
+use fftw::types::c32;
 
 use gtk::{
     glib,
@@ -60,8 +61,8 @@ impl SpectrumAnalyzer {
         let frequency_ranges = zip(frequencies.clone(), frequencies.skip(1));
 
         for (bar, (frequency_start, frequency_end)) in self_.level_bars.iter().zip(frequency_ranges) {
-            let magnitude = frequency_sample.magnitude_in(frequency_start as Frequency..frequency_end as Frequency);
-            let magnitude = magnitude.norm();
+            let (l, r) = frequency_sample.magnitude_in(frequency_start as Frequency..frequency_end as Frequency);
+            let magnitude = c32::new(l, r).norm();
             let magnitude = 10.0 * (magnitude + 1e-7).log10();
             let magnitude = ((magnitude - min) / (max - min)) as f64;
 

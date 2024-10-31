@@ -1,5 +1,6 @@
 use std::ops::Range;
 use cpal::SampleRate;
+use fftw::types::c32;
 use iter_num_tools::lin_space;
 use num_traits::{FloatConst, pow};
 
@@ -7,7 +8,7 @@ use crate::fourier::{Frequency, FrequencySample, Period, StereoMagnitude};
 
 
 pub struct InterpolatedFrequencySample {
-    pub magnitudes: Vec<StereoMagnitude>,
+    pub magnitudes: Vec<c32>,
     pub sample_rate: SampleRate,
 }
 
@@ -15,18 +16,18 @@ impl InterpolatedFrequencySample {
     pub fn new<I>(magnitudes: I, sample_rate: SampleRate) -> Self
         where I: IntoIterator<Item=StereoMagnitude> {
         InterpolatedFrequencySample {
-            magnitudes: magnitudes.into_iter().collect(),
+            magnitudes: magnitudes.into_iter().map(|(l, r)| c32::new(l, r)).collect(),
             sample_rate,
         }
     }
 
     fn index_of(&self, frequency: &Frequency) -> f32 {
         let index = frequency * self.period();
-        assert!(0.0 < index && index < (self.magnitudes.len() - 1) as f32);
+        // assert!(0.0 < index && index < (self.magnitudes.len() - 1) as f32);
         // if !(0.0 < index && index < (self.magnitudes.len() - 1) as f32) {
         //     return 0.0;
         // }
-        index as f32
+        index.clamp(0.0, (self.magnitudes.len() - 1) as f32)
     }
 
     fn frequency_of(&self, index: f32) -> Frequency {
@@ -58,8 +59,6 @@ impl FrequencySample for InterpolatedFrequencySample {
 
     fn magnitude_in(&self, frequencies: Range<Frequency>) -> StereoMagnitude {
 
-        // todo: this could be sped up by storing the magnitudes in prefix-sum form!
-
         // Determine the number of samples to take
         let indices = self.index_of(&frequencies.start)..self.index_of(&frequencies.end);
         let num_samples = ((indices.end - indices.start).floor() as usize).max(1);
@@ -69,20 +68,25 @@ impl FrequencySample for InterpolatedFrequencySample {
         let sample_magnitudes = sample_frequencies
             .map(|f| self.magnitude_at(&f));
 
-        let mean_magnitude = sample_magnitudes.sum::<StereoMagnitude>() / num_samples as f32;
-        mean_magnitude
+        let mean_magnitude = sample_magnitudes
+            .map(|(l, r)| c32 { re: l, im: r })
+            .sum::<c32>() / num_samples as f32;
+        (mean_magnitude.re, mean_magnitude.im)
     }
 }
 
-fn cosine_interpolate(data: &[StereoMagnitude], index: f32) -> StereoMagnitude {
+#[allow(dead_code)]
+fn cosine_interpolate(data: &[c32], index: f32) -> StereoMagnitude {
     let low = index.floor() as usize;
     let high = (index.ceil() as usize).clamp(low + 1, data.len() - 1);
     let offset = index - low as f32;
     let offset = (1.0 - f32::cos(offset * f32::PI())) / 2.0;
-    (data[low] * (1.0 - offset)) + (data[high] * offset)
+    let interpolated = (data[low] * (1.0 - offset)) + (data[high] * offset);
+    (interpolated.re, interpolated.im)
 }
 
-fn cubic_interpolate(data: &[StereoMagnitude], index: f32) -> StereoMagnitude {
+#[allow(dead_code)]
+fn cubic_interpolate(data: &[c32], index: f32) -> StereoMagnitude {
     // Adapted from: https://paulbourke.net/miscellaneous/interpolation/
     let mu = index - index.floor();
     let x0 = (index.floor() as usize - 1).max(0);
@@ -96,5 +100,6 @@ fn cubic_interpolate(data: &[StereoMagnitude], index: f32) -> StereoMagnitude {
     let a2 = y2 - y0;
     let a3 = y1;
 
-    (a0 * pow(mu, 3)) + (a1 * pow(mu, 2)) + (a2 * mu + a3)
+    let interpolated = (a0 * pow(mu, 3)) + (a1 * pow(mu, 2)) + (a2 * mu + a3);
+    (interpolated.re, interpolated.im)
 }
