@@ -67,9 +67,9 @@ fn build_ui(app: &adw::Application) {
     let (input_list, sample_receiver) = AudioInputListModel::new();
 
     // Create a visualizer for the data coming from input list
-    //let visualizer = GPUSpectrogram::new(sample_receiver);
+    let visualizer = GPUSpectrogram::new(sample_receiver);
     // let visualizer = PlaceholderVisualizer::new(sample_receiver);
-    let visualizer = Oscilloscope::new(sample_receiver);
+    // let visualizer = Oscilloscope::new(sample_receiver);
     input_list.bind_property("sample-rate", &visualizer, "sample-rate").build();
     let offloaded_visualizer = GraphicsOffload::new((&visualizer).into());
     offloaded_visualizer.set_black_background(true);

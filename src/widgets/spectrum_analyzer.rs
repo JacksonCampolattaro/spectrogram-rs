@@ -46,8 +46,6 @@ impl SpectrumAnalyzer {
     }
 
     pub fn push_frequencies(&mut self, frequency_sample: &dyn FrequencySample) {
-        // let min = magnitudes.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap().clone();
-        // let max = magnitudes.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap().clone();
         let min = -70.0;
         let max = -10.0;
         let self_ = imp::SpectrumAnalyzer::from_obj(self);
