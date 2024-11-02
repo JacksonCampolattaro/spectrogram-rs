@@ -10,7 +10,6 @@ const FFT_WINDOW_STRIDE: usize = 128;
 const NUM_FREQUENCIES: usize = 1 + (PADDED_FFT_WINDOW_SIZE / 2);
 
 
-pub type StereoMagnitude = (f32, f32);
 pub type Period = f32;
 pub type Frequency = f32;
 

@@ -11,7 +11,7 @@ use gtk::{
 };
 use colorous::*;
 use fftw::types::c32;
-use crate::fourier::StereoMagnitude;
+use crate::StereoMagnitude;
 
 const MIN_DB: f32 = -70.0;
 const MAX_DB: f32 = -10.0;
