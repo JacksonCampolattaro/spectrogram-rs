@@ -65,13 +65,14 @@ impl SimpleComponent for App {
                 },
 
                 gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 5,
-                    set_margin_all: 5,
 
                     add_controller = gtk::EventControllerMotion { connect_enter[overlay_revealer] => move |_, _, _| {
                         overlay_revealer.set_reveal_child(false);
                     }},
+
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 5,
+                    set_margin_all: 5,
 
                     gtk::Button {
                         set_label: "Increment",
